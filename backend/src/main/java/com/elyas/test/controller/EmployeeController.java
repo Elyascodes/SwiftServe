@@ -85,6 +85,7 @@ public class EmployeeController {
         if (body.containsKey("role"))      emp.setRole(((String) body.get("role")).toUpperCase());
         if (body.containsKey("payRate"))   emp.setPayRate(((Number) body.get("payRate")).doubleValue());
         if (body.containsKey("isActive"))  emp.setIsActive((Boolean) body.get("isActive"));
+        if (body.containsKey("assignedTables")) emp.setAssignedTables((String) body.get("assignedTables"));
         repo.save(emp);
 
         return ResponseEntity.ok(emp);

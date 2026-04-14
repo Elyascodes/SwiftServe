@@ -31,6 +31,9 @@ public class User {
     @Column(name = "pay_rate")
     private Double payRate;
 
+    @Column(name = "assigned_tables")
+    private String assignedTables;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
@@ -56,6 +59,9 @@ public class User {
 
     public Double getPayRate() { return payRate; }
     public void setPayRate(Double payRate) { this.payRate = payRate; }
+
+    public String getAssignedTables() { return assignedTables; }
+    public void setAssignedTables(String assignedTables) { this.assignedTables = assignedTables; }
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }

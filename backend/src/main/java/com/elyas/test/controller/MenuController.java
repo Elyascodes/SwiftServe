@@ -53,6 +53,25 @@ public class MenuController {
         return ResponseEntity.ok(item);
     }
 
+    @PutMapping("/{id}/stock")
+    public ResponseEntity<?> updateStock(@PathVariable Long id,
+                                         @RequestBody Map<String, Object> body) {
+        Optional<MenuItem> found = repo.findById(id);
+        if (found.isEmpty()) return ResponseEntity.notFound().build();
+
+        MenuItem item = found.get();
+        if (body.containsKey("stock")) {
+            Number stock = (Number) body.get("stock");
+            item.setStock(stock != null ? stock.intValue() : null);
+        }
+        if (body.containsKey("expirationDate")) {
+            item.setExpirationDate((String) body.get("expirationDate"));
+        }
+        repo.save(item);
+
+        return ResponseEntity.ok(item);
+    }
+
     @PutMapping("/{id}/availability")
     public ResponseEntity<?> toggleAvailability(@PathVariable Long id,
                                                 @RequestBody Map<String, Object> body) {

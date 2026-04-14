@@ -31,6 +31,7 @@ const api = {
     // Tables
     getTables()              { return this.get('/api/tables'); },
     updateTableStatus(id, s) { return this.put(`/api/tables/${id}/status`, { status: s }); },
+    assignTablesBulk(waiterId, tableIds) { return this.put('/api/tables/assign-bulk', { waiterId, tableIds }); },
 
     // Orders
     createOrder(tableId, waiterId)   { return this.post('/api/orders', { tableId, waiterId }); },
@@ -48,6 +49,7 @@ const api = {
     getAllMenuItems()                 { return this.get('/api/menu/all'); },
     updateMenuItem(id, data)         { return this.put(`/api/menu/${id}`, data); },
     toggleMenuAvailability(id, active) { return this.put(`/api/menu/${id}/availability`, { isActive: active }); },
+    updateMenuStock(id, stock, expDate) { return this.put(`/api/menu/${id}/stock`, { stock, expirationDate: expDate }); },
 
     // Employees
     getEmployees()                   { return this.get('/api/employees'); },
@@ -64,7 +66,10 @@ const api = {
 
     // Analytics
     getEarnings(period)              { return this.get(`/api/analytics/earnings?period=${period || 'day'}`); },
+    getHourlyBreakdown()             { return this.get('/api/analytics/earnings/hourly'); },
     getItemPerformance()             { return this.get('/api/analytics/items'); },
+    getPersonnelEfficiency()         { return this.get('/api/analytics/personnel'); },
+    getPrepTime()                    { return this.get('/api/analytics/prep-time'); },
     getSummary()                     { return this.get('/api/analytics/summary'); },
 
     // Refunds

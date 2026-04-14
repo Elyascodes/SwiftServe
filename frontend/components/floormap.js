@@ -1,9 +1,10 @@
-function createFloorMap(containerId, onTableClick) {
+function createFloorMap(containerId, onTableClick, assignedTables) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
     const ROWS = ['A', 'B', 'C', 'D', 'E', 'F'];
     const COLS = [1, 2, 3, 4, 5, 6];
+    const assigned = assignedTables ? assignedTables.split(',').map(t => t.trim()) : null;
 
     container.innerHTML = `
         <div class="floor-map">
@@ -12,6 +13,7 @@ function createFloorMap(containerId, onTableClick) {
                 <span class="legend-item"><span class="legend-dot clean"></span> Clean</span>
                 <span class="legend-item"><span class="legend-dot occupied"></span> Occupied</span>
                 <span class="legend-item"><span class="legend-dot dirty"></span> Dirty</span>
+                ${assigned ? '<span class="legend-item"><span class="legend-dot assigned"></span> Your Table</span>' : ''}
             </div>
         </div>
     `;
@@ -33,6 +35,12 @@ function createFloorMap(containerId, onTableClick) {
             cell.className = 'floor-cell clean';
             cell.id = `table-${tableId}`;
             cell.dataset.tableId = tableId;
+
+            const isAssigned = assigned && assigned.includes(tableId);
+            if (isAssigned) {
+                cell.dataset.assigned = 'true';
+            }
+
             cell.innerHTML = `<span class="table-label">${tableId}</span>`;
             cell.addEventListener('click', () => {
                 if (onTableClick) onTableClick(tableId, cell);
@@ -54,7 +62,11 @@ function updateFloorMap(containerId, tables) {
         const cell = document.getElementById(`table-${table.tableId}`);
         if (!cell) continue;
 
-        cell.className = 'floor-cell ' + table.status.toLowerCase();
+        let classes = 'floor-cell ' + table.status.toLowerCase();
+        if (cell.dataset.assigned === 'true') {
+            classes += ' assigned-table';
+        }
+        cell.className = classes;
     }
 }
 

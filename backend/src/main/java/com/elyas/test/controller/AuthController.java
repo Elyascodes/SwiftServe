@@ -53,11 +53,12 @@ public class AuthController {
         }
 
         User emp = found.get();
-        return ResponseEntity.ok(Map.of(
-                "employeeId", emp.getEmployeeId(),
-                "name",       emp.getName(),
-                "role",       emp.getRole()
-        ));
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("employeeId", emp.getEmployeeId());
+        response.put("name", emp.getName());
+        response.put("role", emp.getRole());
+        response.put("assignedTables", emp.getAssignedTables());
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/change-password")

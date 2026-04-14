@@ -95,6 +95,7 @@ public class OrderController {
 
         Order order = found.get();
         order.setStatus("IN_QUEUE");
+        order.setSubmittedAt(LocalDateTime.now());
         orderRepo.save(order);
 
         return ResponseEntity.ok(buildOrderResponse(order));
@@ -107,6 +108,7 @@ public class OrderController {
 
         Order order = found.get();
         order.setStatus("READY");
+        order.setReadyAt(LocalDateTime.now());
         orderRepo.save(order);
 
         return ResponseEntity.ok(buildOrderResponse(order));
@@ -206,6 +208,8 @@ public class OrderController {
         resp.put("waiterId", order.getWaiterId());
         resp.put("status", order.getStatus());
         resp.put("createdAt", order.getCreatedAt());
+        resp.put("submittedAt", order.getSubmittedAt());
+        resp.put("readyAt", order.getReadyAt());
         resp.put("completedAt", order.getCompletedAt());
         resp.put("total", total);
         resp.put("items", items);

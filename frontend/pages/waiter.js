@@ -33,8 +33,8 @@
         </div>
     `;
 
-    // Initialize floor map
-    createFloorMap('waiterFloorMap', onTableClick);
+    // Initialize floor map with assigned tables
+    createFloorMap('waiterFloorMap', onTableClick, employee.assignedTables);
     refreshFloorMap('waiterFloorMap');
     loadMenu();
 

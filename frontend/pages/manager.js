@@ -94,6 +94,7 @@
         document.getElementById('tabContent').innerHTML = '<div class="card"><p>Loading employees...</p></div>';
         try {
             const employees = await api.getAllEmployees();
+            const waiters = employees.filter(e => e.role === 'WAITER' && e.isActive);
 
             document.getElementById('tabContent').innerHTML = `
                 <div class="card">
@@ -102,7 +103,7 @@
                         <button class="btn btn-primary btn-small" onclick="mgrShowAddEmployee()">+ Add Employee</button>
                     </div>
                     <table class="data-table">
-                        <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Pay Rate</th><th>Status</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Pay Rate</th><th>Tables</th><th>Status</th><th>Actions</th></tr></thead>
                         <tbody id="empTableBody">
                             ${employees.map(emp => `
                                 <tr>
@@ -110,9 +111,11 @@
                                     <td>${emp.name}</td>
                                     <td>${emp.role}</td>
                                     <td>${emp.payRate ? '$' + emp.payRate.toFixed(2) + '/hr' : '-'}</td>
+                                    <td>${emp.assignedTables || '-'}</td>
                                     <td><span class="badge ${emp.isActive ? 'badge-ready' : 'badge-rejected'}">${emp.isActive ? 'Active' : 'Inactive'}</span></td>
                                     <td>
                                         <button class="btn btn-secondary btn-small" onclick="mgrEditEmployee('${emp.employeeId}')">Edit</button>
+                                        ${emp.role === 'WAITER' && emp.isActive ? `<button class="btn btn-warning btn-small" onclick="mgrAssignTables('${emp.employeeId}', '${emp.name}')" style="margin-left:4px">Assign Tables</button>` : ''}
                                         ${emp.isActive ? `<button class="btn btn-danger btn-small" onclick="mgrDeactivateEmployee('${emp.employeeId}')" style="margin-left:4px">Deactivate</button>` : ''}
                                     </td>
                                 </tr>
@@ -125,6 +128,83 @@
             document.getElementById('tabContent').innerHTML = `<div class="card"><p style="color:var(--danger)">${e.message}</p></div>`;
         }
     }
+
+    window.mgrAssignTables = function(waiterId, waiterName) {
+        let selectedTables = [];
+        const ROWS = ['A', 'B', 'C', 'D', 'E', 'F'];
+        const COLS = [1, 2, 3, 4, 5, 6];
+
+        document.getElementById('tabContent').innerHTML += `
+            <div class="modal-overlay" id="assignTablesModal">
+                <div class="modal" style="max-width:650px">
+                    <button class="modal-close" onclick="document.getElementById('assignTablesModal').remove()">&times;</button>
+                    <div class="modal-title">Assign Tables to ${waiterName}</div>
+                    <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:16px">Click tables to select/deselect. Selected tables are highlighted in purple.</p>
+                    <div id="assignGrid" style="display:grid;grid-template-columns:40px repeat(6,1fr);gap:6px;max-width:500px;margin:0 auto 16px"></div>
+                    <div id="assignSelected" style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:16px">Selected: none</div>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" id="assignSaveBtn">Save Assignments</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('assignTablesModal').remove()">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const grid = document.getElementById('assignGrid');
+
+        // Column headers
+        const corner = document.createElement('div');
+        corner.className = 'floor-header';
+        grid.appendChild(corner);
+        for (const col of COLS) {
+            const h = document.createElement('div');
+            h.className = 'floor-header';
+            h.textContent = col;
+            grid.appendChild(h);
+        }
+
+        // Table cells
+        for (const row of ROWS) {
+            const rh = document.createElement('div');
+            rh.className = 'floor-header';
+            rh.textContent = row;
+            grid.appendChild(rh);
+
+            for (const col of COLS) {
+                const tableId = row + col;
+                const cell = document.createElement('div');
+                cell.className = 'floor-cell clean';
+                cell.style.cursor = 'pointer';
+                cell.innerHTML = `<span class="table-label">${tableId}</span>`;
+                cell.addEventListener('click', () => {
+                    const idx = selectedTables.indexOf(tableId);
+                    if (idx >= 0) {
+                        selectedTables.splice(idx, 1);
+                        cell.className = 'floor-cell clean';
+                        cell.style.outline = '';
+                        cell.style.boxShadow = '';
+                    } else {
+                        selectedTables.push(tableId);
+                        cell.className = 'floor-cell clean assigned-table';
+                    }
+                    document.getElementById('assignSelected').textContent =
+                        selectedTables.length > 0 ? 'Selected: ' + selectedTables.join(', ') : 'Selected: none';
+                });
+                grid.appendChild(cell);
+            }
+        }
+
+        document.getElementById('assignSaveBtn').addEventListener('click', async () => {
+            try {
+                await api.assignTablesBulk(waiterId, selectedTables);
+                showToast('Tables assigned to ' + waiterName, 'success');
+                document.getElementById('assignTablesModal').remove();
+                renderEmployeesTab();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        });
+    };
 
     window.mgrShowAddEmployee = function() {
         document.getElementById('tabContent').innerHTML += `
@@ -265,12 +345,14 @@
                     ${categories.map(cat => `
                         <h3 style="font-size:0.85rem;color:var(--accent);margin:16px 0 8px;text-transform:uppercase;letter-spacing:1px">${cat}</h3>
                         <table class="data-table">
-                            <thead><tr><th>Name</th><th>Price</th><th>Sold</th><th>Revenue</th><th>Status</th></tr></thead>
+                            <thead><tr><th>Name</th><th>Price</th><th>Stock</th><th>Expiry</th><th>Sold</th><th>Revenue</th><th>Status</th><th>Actions</th></tr></thead>
                             <tbody>
                                 ${items.filter(i => i.category === cat).map(item => `
                                     <tr>
                                         <td>${item.name}</td>
                                         <td>$${item.price.toFixed(2)}</td>
+                                        <td>${item.stock != null ? (item.stock <= 5 ? `<span style="color:var(--danger);font-weight:700">${item.stock}</span>` : item.stock) : '-'}</td>
+                                        <td style="font-size:0.75rem">${item.expirationDate || '-'}</td>
                                         <td>${item.itemsSold}</td>
                                         <td>$${item.totalRevenue.toFixed(2)}</td>
                                         <td>
@@ -278,6 +360,9 @@
                                                     onclick="mgrToggleMenu(${item.itemId}, ${!item.isActive})">
                                                 ${item.isActive ? 'Active' : 'Inactive'}
                                             </button>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-secondary btn-small" onclick="mgrEditStock(${item.itemId}, '${item.name.replace(/'/g, "\\'")}', ${item.stock != null ? item.stock : 'null'}, '${item.expirationDate || ''}')">Stock</button>
                                         </td>
                                     </tr>
                                 `).join('')}
@@ -300,40 +385,84 @@
         }
     };
 
+    window.mgrEditStock = function(itemId, itemName, currentStock, currentExpiry) {
+        document.getElementById('tabContent').innerHTML += `
+            <div class="modal-overlay" id="stockModal">
+                <div class="modal" style="max-width:400px">
+                    <button class="modal-close" onclick="document.getElementById('stockModal').remove()">&times;</button>
+                    <div class="modal-title">Inventory: ${itemName}</div>
+                    <div class="form-group">
+                        <label class="form-label">Stock Count</label>
+                        <input class="form-input" id="stockCount" type="number" min="0" value="${currentStock != null ? currentStock : ''}" placeholder="Enter stock count" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Expiration Date</label>
+                        <input class="form-input" id="stockExpiry" type="date" value="${currentExpiry}" />
+                    </div>
+                    <button class="btn btn-primary" id="stockSaveBtn">Save</button>
+                </div>
+            </div>
+        `;
+        document.getElementById('stockSaveBtn').addEventListener('click', async () => {
+            const stock = document.getElementById('stockCount').value;
+            const expDate = document.getElementById('stockExpiry').value;
+            try {
+                await api.updateMenuStock(itemId, stock !== '' ? parseInt(stock) : null, expDate || null);
+                showToast('Stock updated', 'success');
+                document.getElementById('stockModal').remove();
+                renderMenuTab();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        });
+    };
+
     // ── Analytics Tab ──
     async function renderAnalyticsTab() {
         document.getElementById('tabContent').innerHTML = '<div class="card"><p>Loading analytics...</p></div>';
         try {
-            const [summary, dayEarnings, weekEarnings, topItems] = await Promise.all([
+            const [summary, weekEarnings, topItems, hourly, personnel, prepTime] = await Promise.all([
                 api.getSummary(),
-                api.getEarnings('day'),
                 api.getEarnings('week'),
-                api.getItemPerformance()
+                api.getItemPerformance(),
+                api.getHourlyBreakdown(),
+                api.getPersonnelEfficiency(),
+                api.getPrepTime()
             ]);
 
-            const top5 = topItems.slice(0, 10);
+            const top10 = topItems.slice(0, 10);
 
             document.getElementById('tabContent').innerHTML = `
-                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px">
+                <!-- Summary Cards -->
+                <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px">
                     <div class="card" style="text-align:center">
-                        <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Today's Revenue</div>
-                        <div style="font-size:1.5rem;font-weight:700;color:var(--success);margin-top:8px">$${summary.todayRevenue.toFixed(2)}</div>
+                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Today's Revenue</div>
+                        <div style="font-size:1.3rem;font-weight:700;color:var(--success);margin-top:6px">$${summary.todayRevenue.toFixed(2)}</div>
                     </div>
                     <div class="card" style="text-align:center">
-                        <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Orders Today</div>
-                        <div style="font-size:1.5rem;font-weight:700;margin-top:8px">${summary.ordersToday}</div>
+                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Orders Today</div>
+                        <div style="font-size:1.3rem;font-weight:700;margin-top:6px">${summary.ordersToday}</div>
                     </div>
                     <div class="card" style="text-align:center">
-                        <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Completed</div>
-                        <div style="font-size:1.5rem;font-weight:700;color:var(--accent);margin-top:8px">${summary.completedToday}</div>
+                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Completed</div>
+                        <div style="font-size:1.3rem;font-weight:700;color:var(--accent);margin-top:6px">${summary.completedToday}</div>
                     </div>
                     <div class="card" style="text-align:center">
-                        <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Active Orders</div>
-                        <div style="font-size:1.5rem;font-weight:700;color:var(--warning);margin-top:8px">${summary.activeOrders}</div>
+                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Active</div>
+                        <div style="font-size:1.3rem;font-weight:700;color:var(--warning);margin-top:6px">${summary.activeOrders}</div>
+                    </div>
+                    <div class="card" style="text-align:center">
+                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Avg Prep Time</div>
+                        <div style="font-size:1.3rem;font-weight:700;color:#3498db;margin-top:6px">${prepTime.avgPrepTimeMinutes != null ? prepTime.avgPrepTimeMinutes + ' min' : '--'}</div>
+                    </div>
+                    <div class="card" style="text-align:center">
+                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Avg Turnaround</div>
+                        <div style="font-size:1.3rem;font-weight:700;color:#9b59b6;margin-top:6px">${prepTime.avgTurnaroundMinutes != null ? prepTime.avgTurnaroundMinutes + ' min' : '--'}</div>
                     </div>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+                    <!-- Weekly Earnings -->
                     <div class="card">
                         <div class="card-header">
                             <h2 class="card-title">Weekly Earnings</h2>
@@ -360,22 +489,77 @@
                         ` : '<p style="color:var(--text-secondary);font-size:0.8rem;margin-top:12px">No earnings data yet.</p>'}
                     </div>
 
+                    <!-- Hourly Breakdown -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Top Items</h2>
+                            <h2 class="card-title">Hourly Breakdown (Today)</h2>
+                        </div>
+                        ${hourly.length > 0 ? `
+                            <table class="data-table">
+                                <thead><tr><th>Hour</th><th>Orders</th><th>Revenue</th></tr></thead>
+                                <tbody>
+                                    ${hourly.map(h => `
+                                        <tr>
+                                            <td>${h.hour}</td>
+                                            <td>${h.orders}</td>
+                                            <td>$${h.revenue.toFixed(2)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        ` : '<p style="color:var(--text-secondary);font-size:0.8rem">No hourly data yet today.</p>'}
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                    <!-- Top Items with Revenue % -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Item Performance</h2>
                         </div>
                         <table class="data-table">
-                            <thead><tr><th>Item</th><th>Sold</th><th>Revenue</th></tr></thead>
+                            <thead><tr><th>Item</th><th>Category</th><th>Sold</th><th>Revenue</th><th>Rev %</th></tr></thead>
                             <tbody>
-                                ${top5.map(item => `
+                                ${top10.map(item => `
                                     <tr>
                                         <td>${item.name}</td>
+                                        <td style="font-size:0.7rem;color:var(--text-secondary)">${item.category}</td>
                                         <td>${item.itemsSold}</td>
                                         <td>$${item.totalRevenue.toFixed(2)}</td>
+                                        <td>
+                                            <div style="display:flex;align-items:center;gap:6px">
+                                                <div style="flex:1;height:6px;background:var(--bg-input);border-radius:3px;overflow:hidden">
+                                                    <div style="width:${Math.min(item.revenuePercent, 100)}%;height:100%;background:var(--accent);border-radius:3px"></div>
+                                                </div>
+                                                <span style="font-size:0.7rem;min-width:40px">${item.revenuePercent}%</span>
+                                            </div>
+                                        </td>
                                     </tr>
                                 `).join('')}
                             </tbody>
                         </table>
+                    </div>
+
+                    <!-- Personnel Efficiency -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Personnel Efficiency (Today)</h2>
+                        </div>
+                        ${personnel.length > 0 ? `
+                            <table class="data-table">
+                                <thead><tr><th>Waiter</th><th>Orders</th><th>Completed</th><th>Avg Turnaround</th></tr></thead>
+                                <tbody>
+                                    ${personnel.map(p => `
+                                        <tr>
+                                            <td>${p.waiterName}</td>
+                                            <td>${p.totalOrders}</td>
+                                            <td>${p.completedOrders}</td>
+                                            <td>${p.avgTurnaroundMinutes != null ? p.avgTurnaroundMinutes + ' min' : '--'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        ` : '<p style="color:var(--text-secondary);font-size:0.8rem">No personnel data yet today.</p>'}
                     </div>
                 </div>
             `;

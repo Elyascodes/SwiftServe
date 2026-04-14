@@ -224,6 +224,14 @@ body {
 .legend-dot.clean    { background: var(--clean); }
 .legend-dot.occupied { background: var(--occupied); }
 .legend-dot.dirty    { background: var(--dirty); }
+.legend-dot.assigned { background: #9b59b6; }
+
+/* ── Assigned Table Highlight ── */
+.floor-cell.assigned-table {
+    outline: 3px solid #9b59b6;
+    outline-offset: -3px;
+    box-shadow: 0 0 8px rgba(155, 89, 182, 0.5);
+}
 
 /* ── Cards & Panels ── */
 .card {
