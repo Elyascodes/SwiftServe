@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SwiftServe</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles/app.css" />
+</head>
+<body>
+
+<div class="header">
+    <div class="header-left">
+        <div class="header-logo">SWIFTSERVE</div>
+        <div class="header-divider"></div>
+        <div class="header-user">
+            <strong id="userName"></strong>
+            <span class="header-role" id="userRole"></span>
+        </div>
+    </div>
+    <div class="header-right">
+        <span class="clock-status clocked-out" id="clockStatus">Clocked Out</span>
+        <button class="btn btn-secondary" id="clockBtn" onclick="toggleClock()">Clock In</button>
+        <button class="btn btn-danger btn-small" onclick="logout()">Logout</button>
+    </div>
+</div>
+
+<div class="main-content" id="mainContent">
+    <!-- Role-specific content loaded here -->
+</div>
+
+<script src="components/api.js"></script>
+<script src="components/floormap.js"></script>
+<script>
+    // Session management
+    const employee = JSON.parse(sessionStorage.getItem('employee') || 'null');
+    if (!employee) {
+        window.location.href = 'index.html';
+    }
+
+    // Set header info
+    document.getElementById('userName').textContent = employee.name;
+    document.getElementById('userRole').textContent = employee.role;
+
+    // Clock in/out state
+    let isClockedIn = false;
+
+    async function checkClockStatus() {
+        try {
+            const status = await api.getClockStatus(employee.employeeId);
+            isClockedIn = status.clockedIn;
+            updateClockUI();
+        } catch (e) {
+            console.error('Clock status check failed:', e);
+        }
+    }
+
+    function updateClockUI() {
+        const badge = document.getElementById('clockStatus');
+        const btn = document.getElementById('clockBtn');
+        if (isClockedIn) {
+            badge.textContent = 'Clocked In';
+            badge.className = 'clock-status clocked-in';
+            btn.textContent = 'Clock Out';
+        } else {
+            badge.textContent = 'Clocked Out';
+            badge.className = 'clock-status clocked-out';
+            btn.textContent = 'Clock In';
+        }
+    }
+
+    async function toggleClock() {
+        try {
+            if (isClockedIn) {
+                await api.clockOut(employee.employeeId);
+                showToast('Clocked out successfully', 'success');
+            } else {
+                await api.clockIn(employee.employeeId);
+                showToast('Clocked in successfully', 'success');
+            }
+            isClockedIn = !isClockedIn;
+            updateClockUI();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    }
+
+    function logout() {
+        sessionStorage.removeItem('employee');
+        window.location.href = 'index.html';
+    }
+
+    function showToast(message, type) {
+        const existing = document.querySelector('.toast');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type || ''}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+
+    // Load role-specific page
+    function loadRolePage() {
+        const role = employee.role.toUpperCase();
+        let script;
+        switch (role) {
+            case 'WAITER':  script = 'pages/waiter.js'; break;
+            case 'CHEF':    script = 'pages/cook.js'; break;
+            case 'BUSBOY':  script = 'pages/busboy.js'; break;
+            case 'MANAGER': script = 'pages/manager.js'; break;
+            default:
+                document.getElementById('mainContent').innerHTML = '<p>Unknown role: ' + role + '</p>';
+                return;
+        }
+
+        const s = document.createElement('script');
+        s.src = script;
+        document.body.appendChild(s);
+    }
+
+    checkClockStatus();
+    loadRolePage();
+</script>
+
+</body>
+</html>

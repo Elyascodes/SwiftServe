@@ -1,4 +1,4 @@
-package com.elyas.test.controller;
+package com.elyas.test.model;
 
 import jakarta.persistence.*;
 
@@ -17,10 +17,22 @@ public class User {
     private String passwordHash;
 
     @Column(nullable = false)
-    private String role;   // MANAGER | WAITER | BUSBOY | CHEF
+    private String role;
 
     @Column(nullable = false)
     private String name;
+
+    @Column(name = "first_name")
+    private String firstName;
+
+    @Column(name = "last_name")
+    private String lastName;
+
+    @Column(name = "pay_rate")
+    private Double payRate;
+
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = true;
 
     public Long getId() { return id; }
 
@@ -35,4 +47,16 @@ public class User {
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+
+    public String getFirstName() { return firstName; }
+    public void setFirstName(String firstName) { this.firstName = firstName; }
+
+    public String getLastName() { return lastName; }
+    public void setLastName(String lastName) { this.lastName = lastName; }
+
+    public Double getPayRate() { return payRate; }
+    public void setPayRate(Double payRate) { this.payRate = payRate; }
+
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
 }

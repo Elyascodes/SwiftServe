@@ -225,6 +225,11 @@
 </div>
 
 <script>
+  // If already logged in, go straight to the app
+  if (sessionStorage.getItem('employee')) {
+    window.location.href = 'app.html';
+  }
+
   const BANNED_PASSWORDS = ['1111', '123456', '000000', '111111', '123123', '654321'];
 
   async function handleSignIn() {
@@ -265,11 +270,8 @@
       const data = await res.json();
 
       if (res.ok) {
-        // Store session info for the next screen
         sessionStorage.setItem('employee', JSON.stringify(data));
-        // TODO: navigate to the role-appropriate dashboard
-        console.log('Signed in:', data);
-        alert(`Welcome, ${data.name}! Role: ${data.role}`);
+        window.location.href = 'app.html';
       } else {
         errEl.textContent = data.message || 'Sign-in failed.';
       }
