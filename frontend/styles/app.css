@@ -233,6 +233,14 @@ body {
     box-shadow: 0 0 8px rgba(155, 89, 182, 0.5);
 }
 
+/* ── Selected Table (Bus Boy) ── */
+.floor-cell.selected-table {
+    outline: 3px solid #fff;
+    outline-offset: -3px;
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+    transform: scale(1.08);
+}
+
 /* ── Cards & Panels ── */
 .card {
     background: var(--bg-card);
