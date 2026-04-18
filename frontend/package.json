@@ -1,16 +1,59 @@
 {
-  "name": "frontend",
+  "name": "swiftserve",
   "version": "1.0.0",
-  "description": "",
+  "description": "SwiftServe Restaurant Management System",
+  "author": "Elyas",
   "license": "ISC",
-  "author": "",
   "type": "commonjs",
   "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
   },
   "devDependencies": {
-    "electron": "^41.1.1"
+    "electron": "^41.1.1",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.elyas.swiftserve",
+    "productName": "SwiftServe",
+    "copyright": "Copyright © 2025 SwiftServe",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!node_modules/.cache/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/target/swiftserve.jar",
+        "to": "backend.jar"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "installerHeaderIcon": null
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }
