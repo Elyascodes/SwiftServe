@@ -138,15 +138,24 @@
 
         document.getElementById('tabContent').innerHTML += `
             <div class="modal-overlay" id="assignTablesModal">
-                <div class="modal" style="max-width:650px">
-                    <button class="modal-close" onclick="document.getElementById('assignTablesModal').remove()">&times;</button>
-                    <div class="modal-title">Assign Tables to ${waiterName}</div>
-                    <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:16px">Click tables to select/deselect. Selected tables are highlighted in purple.</p>
-                    <div id="assignGrid" style="display:grid;grid-template-columns:40px repeat(6,1fr);gap:6px;max-width:500px;margin:0 auto 16px"></div>
-                    <div id="assignSelected" style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:16px">Selected: none</div>
-                    <div style="display:flex;gap:8px">
-                        <button class="btn btn-primary" id="assignSaveBtn">Save Assignments</button>
-                        <button class="btn btn-secondary" onclick="document.getElementById('assignTablesModal').remove()">Cancel</button>
+                <div class="modal" style="max-width:650px;display:flex;flex-direction:column;padding:0;max-height:88vh">
+                    <!-- Fixed header -->
+                    <div style="padding:22px 24px 14px;flex-shrink:0">
+                        <button class="modal-close" onclick="document.getElementById('assignTablesModal').remove()">&times;</button>
+                        <div class="modal-title">Assign Tables to ${waiterName}</div>
+                        <p style="font-size:0.8rem;color:var(--text-secondary)">Click tables to select/deselect. Selected tables are highlighted in purple.</p>
+                    </div>
+                    <!-- Scrollable grid body -->
+                    <div style="flex:1;overflow-y:auto;padding:0 24px">
+                        <div id="assignGrid" style="display:grid;grid-template-columns:40px repeat(6,1fr);gap:6px;max-width:500px;margin:0 auto"></div>
+                    </div>
+                    <!-- Sticky footer: selection summary + buttons -->
+                    <div style="flex-shrink:0;padding:14px 24px 20px;border-top:1px solid var(--border);background:var(--bg-card);border-radius:0 0 16px 16px">
+                        <div id="assignSelected" style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:12px">Selected: <em>none</em></div>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-primary" id="assignSaveBtn">Confirm Assignment</button>
+                            <button class="btn btn-secondary" onclick="document.getElementById('assignTablesModal').remove()">Cancel</button>
+                        </div>
                     </div>
                 </div>
             </div>
