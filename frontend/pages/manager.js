@@ -15,6 +15,8 @@
     `;
 
     let currentTab = 'floor';
+    let _analyticsCharts = {};
+    let _analyticsPeriod = 'week';
 
     window.mgrSwitchTab = function(tab) {
         currentTab = tab;
@@ -419,154 +421,231 @@
 
     // ── Analytics Tab ──
     async function renderAnalyticsTab() {
-        document.getElementById('tabContent').innerHTML = '<div class="card"><p>Loading analytics...</p></div>';
+        // Destroy any existing Chart.js instances before re-rendering
+        Object.values(_analyticsCharts).forEach(c => { try { c.destroy(); } catch (_) {} });
+        _analyticsCharts = {};
+
+        const period = _analyticsPeriod;
+
+        // Render shell with period tabs immediately so clicks feel instant
+        document.getElementById('tabContent').innerHTML = `
+            <div class="an-header">
+                <div>
+                    <div class="an-brand">SWIFTSERVE</div>
+                    <div class="an-title">ANALYTICS &amp; REPORT</div>
+                </div>
+                <div class="an-tabs">
+                    <button class="an-tab ${period==='day'?'active':''}" onclick="mgrSetPeriod('day')">Today</button>
+                    <button class="an-tab ${period==='week'?'active':''}" onclick="mgrSetPeriod('week')">This Week</button>
+                    <button class="an-tab ${period==='month'?'active':''}" onclick="mgrSetPeriod('month')">This Month</button>
+                </div>
+            </div>
+            <p style="color:var(--text-secondary);font-size:0.85rem;padding:8px 0">Loading&hellip;</p>
+        `;
+
         try {
-            const [summary, weekEarnings, topItems, hourly, personnel, prepTime] = await Promise.all([
-                api.getSummary(),
-                api.getEarnings('week'),
-                api.getItemPerformance(),
+            const [earnings, hourly, topItems, personnel, prepTime] = await Promise.all([
+                api.getEarnings(period),
                 api.getHourlyBreakdown(),
+                api.getItemPerformance(),
                 api.getPersonnelEfficiency(),
                 api.getPrepTime()
             ]);
 
-            const top10 = topItems.slice(0, 10);
+            const totalRevenue = earnings.totalRevenue  || 0;
+            const cashPayments = earnings.cashPayments  || 0;
+            const cardPayments = earnings.cardPayments  || 0;
+            const daily        = earnings.dailyBreakdown || [];
+            const avgDaily     = totalRevenue / (daily.length || 1);
+            const totalPmts    = cashPayments + cardPayments;
+            const cardPct      = totalPmts > 0 ? Math.round(cardPayments / totalPmts * 100) : 0;
+            const cashPct      = totalPmts > 0 ? Math.round(cashPayments / totalPmts * 100) : 0;
+
+            // Bar chart: hourly for "Today", daily breakdown for week/month
+            const barLabels = period === 'day' ? hourly.map(h => h.hour)    : daily.map(d => d.earnDate);
+            const barData   = period === 'day' ? hourly.map(h => h.revenue) : daily.map(d => d.revenue);
+
+            const periodLabel = period === 'day'  ? 'TODAY'
+                              : period === 'week' ? 'THIS WEEK'
+                              : new Date().toLocaleDateString('en-US', {month:'long', year:'numeric'}).toUpperCase();
+
+            const top5 = topItems.slice(0, 5);
 
             document.getElementById('tabContent').innerHTML = `
-                <!-- Summary Cards -->
-                <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px">
-                    <div class="card" style="text-align:center">
-                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Today's Revenue</div>
-                        <div style="font-size:1.3rem;font-weight:700;color:var(--success);margin-top:6px">$${summary.todayRevenue.toFixed(2)}</div>
+                <!-- Header -->
+                <div class="an-header">
+                    <div>
+                        <div class="an-brand">SWIFTSERVE</div>
+                        <div class="an-title">ANALYTICS &amp; REPORT</div>
                     </div>
-                    <div class="card" style="text-align:center">
-                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Orders Today</div>
-                        <div style="font-size:1.3rem;font-weight:700;margin-top:6px">${summary.ordersToday}</div>
-                    </div>
-                    <div class="card" style="text-align:center">
-                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Completed</div>
-                        <div style="font-size:1.3rem;font-weight:700;color:var(--accent);margin-top:6px">${summary.completedToday}</div>
-                    </div>
-                    <div class="card" style="text-align:center">
-                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Active</div>
-                        <div style="font-size:1.3rem;font-weight:700;color:var(--warning);margin-top:6px">${summary.activeOrders}</div>
-                    </div>
-                    <div class="card" style="text-align:center">
-                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Avg Prep Time</div>
-                        <div style="font-size:1.3rem;font-weight:700;color:#3498db;margin-top:6px">${prepTime.avgPrepTimeMinutes != null ? prepTime.avgPrepTimeMinutes + ' min' : '--'}</div>
-                    </div>
-                    <div class="card" style="text-align:center">
-                        <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px">Avg Turnaround</div>
-                        <div style="font-size:1.3rem;font-weight:700;color:#9b59b6;margin-top:6px">${prepTime.avgTurnaroundMinutes != null ? prepTime.avgTurnaroundMinutes + ' min' : '--'}</div>
+                    <div class="an-tabs">
+                        <button class="an-tab ${period==='day'?'active':''}" onclick="mgrSetPeriod('day')">Today</button>
+                        <button class="an-tab ${period==='week'?'active':''}" onclick="mgrSetPeriod('week')">This Week</button>
+                        <button class="an-tab ${period==='month'?'active':''}" onclick="mgrSetPeriod('month')">This Month</button>
                     </div>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-                    <!-- Weekly Earnings -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h2 class="card-title">Weekly Earnings</h2>
-                        </div>
-                        <div style="font-size:1.3rem;font-weight:700;color:var(--success);margin-bottom:12px">$${weekEarnings.totalRevenue.toFixed(2)}</div>
-                        <div style="display:flex;gap:16px;font-size:0.8rem;color:var(--text-secondary)">
-                            <span>Cash: ${weekEarnings.cashPayments}</span>
-                            <span>Card: ${weekEarnings.cardPayments}</span>
-                        </div>
-                        ${weekEarnings.dailyBreakdown && weekEarnings.dailyBreakdown.length > 0 ? `
-                            <table class="data-table" style="margin-top:12px">
-                                <thead><tr><th>Date</th><th>Revenue</th><th>Cash</th><th>Card</th></tr></thead>
-                                <tbody>
-                                    ${weekEarnings.dailyBreakdown.map(d => `
-                                        <tr>
-                                            <td>${d.earnDate}</td>
-                                            <td>$${d.revenue.toFixed(2)}</td>
-                                            <td>${d.cashPayments}</td>
-                                            <td>${d.cardPayments}</td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        ` : '<p style="color:var(--text-secondary);font-size:0.8rem;margin-top:12px">No earnings data yet.</p>'}
+                <!-- Stat Cards -->
+                <div class="an-stats">
+                    <div class="an-stat-card" style="border-left-color:var(--accent)">
+                        <div class="an-stat-label">Total Revenue</div>
+                        <div class="an-stat-value">$${totalRevenue.toFixed(2)}</div>
                     </div>
-
-                    <!-- Hourly Breakdown -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h2 class="card-title">Hourly Breakdown (Today)</h2>
-                        </div>
-                        ${hourly.length > 0 ? `
-                            <table class="data-table">
-                                <thead><tr><th>Hour</th><th>Orders</th><th>Revenue</th></tr></thead>
-                                <tbody>
-                                    ${hourly.map(h => `
-                                        <tr>
-                                            <td>${h.hour}</td>
-                                            <td>${h.orders}</td>
-                                            <td>$${h.revenue.toFixed(2)}</td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        ` : '<p style="color:var(--text-secondary);font-size:0.8rem">No hourly data yet today.</p>'}
+                    <div class="an-stat-card" style="border-left-color:#666">
+                        <div class="an-stat-label">Cash Payments</div>
+                        <div class="an-stat-value">${cashPayments}</div>
+                    </div>
+                    <div class="an-stat-card" style="border-left-color:#3498db">
+                        <div class="an-stat-label">Card Payments</div>
+                        <div class="an-stat-value">${cardPayments}</div>
+                    </div>
+                    <div class="an-stat-card" style="border-left-color:var(--success)">
+                        <div class="an-stat-label">Avg Daily Revenue</div>
+                        <div class="an-stat-value">$${avgDaily.toFixed(2)}</div>
                     </div>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-                    <!-- Top Items with Revenue % -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h2 class="card-title">Item Performance</h2>
+                <!-- Charts Row -->
+                <div class="an-charts-row">
+                    <!-- Bar Chart -->
+                    <div class="card an-bar-card">
+                        <div class="an-chart-title">DAILY REVENUE &mdash; ${periodLabel}</div>
+                        <div class="an-bar-wrap">
+                            <canvas id="revenueBarChart"></canvas>
                         </div>
+                    </div>
+
+                    <!-- Right column: pie + top items -->
+                    <div class="an-right-col">
+                        <div class="card an-pie-card">
+                            <div class="an-chart-title">PAYMENT METHODS</div>
+                            <div class="an-pie-wrap">
+                                <canvas id="paymentPieChart"></canvas>
+                            </div>
+                            <div class="an-pie-legend">
+                                <div class="an-legend-item">
+                                    <span class="an-legend-dot" style="background:var(--accent)"></span>Card ${cardPct}%
+                                </div>
+                                <div class="an-legend-item">
+                                    <span class="an-legend-dot" style="background:#888"></span>Cash ${cashPct}%
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card an-top-card">
+                            <div class="an-chart-title">TOP ITEMS</div>
+                            <ol class="an-top-list">
+                                ${top5.length > 0 ? top5.map((item, i) => `
+                                    <li class="an-top-item">
+                                        <span class="an-top-rank">${i+1}</span>
+                                        <span class="an-top-name">${item.name}</span>
+                                        <span class="an-top-rev">$${item.totalRevenue.toFixed(2)}</span>
+                                    </li>
+                                `).join('') : '<li class="an-top-item" style="color:var(--text-secondary);list-style:none">No data yet</li>'}
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Worker Performance -->
+                <div class="card" style="margin-top:16px">
+                    <div class="card-header">
+                        <h2 class="card-title">Worker Performance</h2>
+                        ${prepTime.avgPrepTimeMinutes != null ? `<span style="font-size:0.75rem;color:var(--text-secondary)">Avg prep: <strong>${prepTime.avgPrepTimeMinutes} min</strong></span>` : ''}
+                    </div>
+                    ${personnel.length > 0 ? `
                         <table class="data-table">
-                            <thead><tr><th>Item</th><th>Category</th><th>Sold</th><th>Revenue</th><th>Rev %</th></tr></thead>
+                            <thead><tr><th>Waiter</th><th>Total Orders</th><th>Completed</th><th>Avg Turnaround</th></tr></thead>
                             <tbody>
-                                ${top10.map(item => `
+                                ${personnel.map(p => `
                                     <tr>
-                                        <td>${item.name}</td>
-                                        <td style="font-size:0.7rem;color:var(--text-secondary)">${item.category}</td>
-                                        <td>${item.itemsSold}</td>
-                                        <td>$${item.totalRevenue.toFixed(2)}</td>
-                                        <td>
-                                            <div style="display:flex;align-items:center;gap:6px">
-                                                <div style="flex:1;height:6px;background:var(--bg-input);border-radius:3px;overflow:hidden">
-                                                    <div style="width:${Math.min(item.revenuePercent, 100)}%;height:100%;background:var(--accent);border-radius:3px"></div>
-                                                </div>
-                                                <span style="font-size:0.7rem;min-width:40px">${item.revenuePercent}%</span>
-                                            </div>
-                                        </td>
+                                        <td>${p.waiterName}</td>
+                                        <td>${p.totalOrders}</td>
+                                        <td>${p.completedOrders}</td>
+                                        <td>${p.avgTurnaroundMinutes != null ? p.avgTurnaroundMinutes + ' min' : '&mdash;'}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
                         </table>
-                    </div>
-
-                    <!-- Personnel Efficiency -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h2 class="card-title">Personnel Efficiency (Today)</h2>
-                        </div>
-                        ${personnel.length > 0 ? `
-                            <table class="data-table">
-                                <thead><tr><th>Waiter</th><th>Orders</th><th>Completed</th><th>Avg Turnaround</th></tr></thead>
-                                <tbody>
-                                    ${personnel.map(p => `
-                                        <tr>
-                                            <td>${p.waiterName}</td>
-                                            <td>${p.totalOrders}</td>
-                                            <td>${p.completedOrders}</td>
-                                            <td>${p.avgTurnaroundMinutes != null ? p.avgTurnaroundMinutes + ' min' : '--'}</td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        ` : '<p style="color:var(--text-secondary);font-size:0.8rem">No personnel data yet today.</p>'}
-                    </div>
+                    ` : '<p style="color:var(--text-secondary);font-size:0.8rem">No worker data for this period.</p>'}
                 </div>
             `;
+
+            // ── Draw bar chart ──
+            if (barLabels.length > 0 && typeof Chart !== 'undefined') {
+                const barEl = document.getElementById('revenueBarChart');
+                if (barEl) {
+                    _analyticsCharts.bar = new Chart(barEl, {
+                        type: 'bar',
+                        data: {
+                            labels: barLabels,
+                            datasets: [{
+                                label: 'Revenue ($)',
+                                data: barData,
+                                backgroundColor: 'rgba(242,90,80,0.85)',
+                                borderColor: '#f25a50',
+                                borderWidth: 1,
+                                borderRadius: 4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                x: {
+                                    grid: { color: 'rgba(255,255,255,0.05)' },
+                                    ticks: { color: '#a0a0c0', font: { size: 10 }, maxRotation: 45 }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    grid: { color: 'rgba(255,255,255,0.05)' },
+                                    ticks: { color: '#a0a0c0', font: { size: 10 }, callback: v => '$' + v }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+
+            // ── Draw doughnut chart ──
+            if (totalPmts > 0 && typeof Chart !== 'undefined') {
+                const pieEl = document.getElementById('paymentPieChart');
+                if (pieEl) {
+                    _analyticsCharts.pie = new Chart(pieEl, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Card', 'Cash'],
+                            datasets: [{
+                                data: [cardPayments, cashPayments],
+                                backgroundColor: ['#f25a50', '#888888'],
+                                borderWidth: 0
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: { callbacks: {
+                                    label: ctx => ` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw / totalPmts * 100)}%)`
+                                }}
+                            },
+                            cutout: '62%'
+                        }
+                    });
+                }
+            }
+
         } catch (e) {
             document.getElementById('tabContent').innerHTML = `<div class="card"><p style="color:var(--danger)">${e.message}</p></div>`;
         }
     }
+
+    window.mgrSetPeriod = function(period) {
+        _analyticsPeriod = period;
+        renderAnalyticsTab();
+    };
 
     // ── Refunds Tab ──
     async function renderRefundsTab() {
