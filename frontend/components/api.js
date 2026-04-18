@@ -76,5 +76,5 @@ const api = {
     createRefund(data)               { return this.post('/api/refunds', data); },
     getPendingRefunds()              { return this.get('/api/refunds/pending'); },
     approveRefund(id, managerId)     { return this.put(`/api/refunds/${id}/approve`, { managerId }); },
-    rejectRefund(id, managerId)      { return this.put(`/api/refunds/${id}/reject`, { managerId }); },
+    rejectRefund(id, managerId, rejectionReason) { return this.put(`/api/refunds/${id}/reject`, { managerId, rejectionReason }); },
 };

@@ -71,12 +71,19 @@ public class RefundController {
     @PutMapping("/{id}/reject")
     public ResponseEntity<?> reject(@PathVariable Long id,
                                     @RequestBody Map<String, String> body) {
+        String rejectionReason = body.get("rejectionReason");
+        if (rejectionReason == null || rejectionReason.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "A rejection reason is required."));
+        }
+
         Optional<RefundRequest> found = repo.findById(id);
         if (found.isEmpty()) return ResponseEntity.notFound().build();
 
         RefundRequest req = found.get();
         req.setStatus("REJECTED");
         req.setManagerId(body.get("managerId"));
+        req.setRejectionReason(rejectionReason.trim());
         req.setDecidedAt(LocalDateTime.now());
         repo.save(req);
 

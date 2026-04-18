@@ -582,7 +582,7 @@
                     </div>
                     ${refunds.length === 0 ? '<p style="color:var(--text-secondary);font-size:0.85rem">No refund requests.</p>' : `
                     <table class="data-table">
-                        <thead><tr><th>ID</th><th>Order</th><th>Waiter</th><th>Reason</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>ID</th><th>Order</th><th>Waiter</th><th>Request Reason</th><th>Amount</th><th>Status</th><th>Decision Notes</th><th>Actions</th></tr></thead>
                         <tbody>
                             ${refunds.map(r => `
                                 <tr>
@@ -592,11 +592,16 @@
                                     <td>${r.reason}</td>
                                     <td>$${r.amount.toFixed(2)}</td>
                                     <td><span class="badge badge-${r.status.toLowerCase()}">${r.status}</span></td>
+                                    <td style="font-size:0.75rem;color:var(--text-secondary);max-width:200px">
+                                        ${r.status === 'REJECTED' && r.rejectionReason
+                                            ? `<span style="color:var(--danger)">${r.rejectionReason}</span>`
+                                            : (r.managerId ? r.managerId : '–')}
+                                    </td>
                                     <td>
                                         ${r.status === 'PENDING' ? `
                                             <button class="btn btn-success btn-small" onclick="mgrApproveRefund(${r.id})">Approve</button>
-                                            <button class="btn btn-danger btn-small" onclick="mgrRejectRefund(${r.id})" style="margin-left:4px">Reject</button>
-                                        ` : `<span style="font-size:0.7rem;color:var(--text-secondary)">${r.managerId || ''}</span>`}
+                                            <button class="btn btn-danger btn-small" onclick="mgrShowRejectModal(${r.id})" style="margin-left:4px">Reject</button>
+                                        ` : ''}
                                     </td>
                                 </tr>
                             `).join('')}
@@ -619,14 +624,45 @@
         }
     };
 
-    window.mgrRejectRefund = async function(id) {
-        try {
-            await api.rejectRefund(id, employee.employeeId);
-            showToast('Refund rejected', 'success');
-            renderRefundsTab();
-        } catch (e) {
-            showToast(e.message, 'error');
-        }
+    window.mgrShowRejectModal = function(id) {
+        document.getElementById('tabContent').innerHTML += `
+            <div class="modal-overlay" id="rejectRefundModal">
+                <div class="modal" style="max-width:440px">
+                    <button class="modal-close" onclick="document.getElementById('rejectRefundModal').remove()">&times;</button>
+                    <div class="modal-title">Reject Refund #${id}</div>
+                    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:16px">
+                        Please provide a reason for rejecting this refund request. This will be recorded and visible in the refund history.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Rejection Reason <span style="color:var(--danger)">*</span></label>
+                        <textarea class="form-input" id="rejectReasonInput" rows="4"
+                            placeholder="e.g. Order was confirmed correct by kitchen staff..."
+                            style="resize:vertical;min-height:90px"></textarea>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:4px">
+                        <button class="btn btn-danger" id="confirmRejectBtn">Confirm Rejection</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('rejectRefundModal').remove()">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('confirmRejectBtn').addEventListener('click', async () => {
+            const reason = document.getElementById('rejectReasonInput').value.trim();
+            if (!reason) {
+                document.getElementById('rejectReasonInput').style.borderColor = 'var(--danger)';
+                document.getElementById('rejectReasonInput').placeholder = 'Reason is required before rejecting.';
+                return;
+            }
+            try {
+                await api.rejectRefund(id, employee.employeeId, reason);
+                showToast('Refund rejected', 'success');
+                document.getElementById('rejectRefundModal').remove();
+                renderRefundsTab();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        });
     };
 
     // ── Timesheets Tab ──
