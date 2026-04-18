@@ -1,0 +1,839 @@
+(function() {
+    const content = document.getElementById('mainContent');
+
+    content.innerHTML = `
+        <div class="tabs" id="managerTabs">
+            <button class="tab active" onclick="mgrSwitchTab('floor')">Floor Map</button>
+            <button class="tab" onclick="mgrSwitchTab('orders')">Orders</button>
+            <button class="tab" onclick="mgrSwitchTab('employees')">Employees</button>
+            <button class="tab" onclick="mgrSwitchTab('menu')">Menu</button>
+            <button class="tab" onclick="mgrSwitchTab('analytics')">Analytics</button>
+            <button class="tab" onclick="mgrSwitchTab('refunds')">Refunds</button>
+            <button class="tab" onclick="mgrSwitchTab('timesheets')">Timesheets</button>
+        </div>
+        <div id="tabContent"></div>
+    `;
+
+    let currentTab = 'floor';
+    let _analyticsCharts = {};
+    let _analyticsPeriod = 'week';
+
+    window.mgrSwitchTab = function(tab) {
+        currentTab = tab;
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(t => {
+            if (t.textContent.toLowerCase().replace(' ', '') === tab ||
+                (tab === 'floor' && t.textContent === 'Floor Map') ||
+                (tab === 'employees' && t.textContent === 'Employees') ||
+                (tab === 'timesheets' && t.textContent === 'Timesheets'))
+                t.classList.add('active');
+        });
+
+        switch (tab) {
+            case 'floor':      renderFloorTab(); break;
+            case 'orders':     renderOrdersTab(); break;
+            case 'employees':  renderEmployeesTab(); break;
+            case 'menu':       renderMenuTab(); break;
+            case 'analytics':  renderAnalyticsTab(); break;
+            case 'refunds':    renderRefundsTab(); break;
+            case 'timesheets': renderTimesheetsTab(); break;
+        }
+    };
+
+    // ── Floor Map Tab ──
+    function renderFloorTab() {
+        document.getElementById('tabContent').innerHTML = `
+            <div class="card" style="max-width:700px;margin:0 auto">
+                <div class="card-header">
+                    <h2 class="card-title">Floor Overview</h2>
+                </div>
+                <div id="mgrFloorMap"></div>
+            </div>
+        `;
+        createFloorMap('mgrFloorMap', (tableId) => {
+            showToast('Table ' + tableId, 'success');
+        });
+        refreshFloorMap('mgrFloorMap');
+    }
+
+    // ── Orders Tab ──
+    async function renderOrdersTab() {
+        document.getElementById('tabContent').innerHTML = '<div class="card"><p>Loading orders...</p></div>';
+        try {
+            const orders = await api.getAllOrders();
+            orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            document.getElementById('tabContent').innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">All Orders</h2>
+                        <span style="font-size:0.8rem;color:var(--text-secondary)">${orders.length} total</span>
+                    </div>
+                    <table class="data-table">
+                        <thead><tr><th>Order</th><th>Table</th><th>Waiter</th><th>Status</th><th>Total</th><th>Time</th></tr></thead>
+                        <tbody>
+                            ${orders.map(o => `
+                                <tr>
+                                    <td>#${o.orderId}</td>
+                                    <td>${o.tableId}</td>
+                                    <td>${o.waiterId}</td>
+                                    <td><span class="badge badge-${o.status.toLowerCase()}">${o.status.replace('_',' ')}</span></td>
+                                    <td>$${(o.total || 0).toFixed(2)}</td>
+                                    <td>${new Date(o.createdAt).toLocaleString()}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } catch (e) {
+            document.getElementById('tabContent').innerHTML = `<div class="card"><p style="color:var(--danger)">${e.message}</p></div>`;
+        }
+    }
+
+    // ── Employees Tab ──
+    async function renderEmployeesTab() {
+        document.getElementById('tabContent').innerHTML = '<div class="card"><p>Loading employees...</p></div>';
+        try {
+            const employees = await api.getAllEmployees();
+            const waiters = employees.filter(e => e.role === 'WAITER' && e.isActive);
+
+            document.getElementById('tabContent').innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Employee Management</h2>
+                        <button class="btn btn-primary btn-small" onclick="mgrShowAddEmployee()">+ Add Employee</button>
+                    </div>
+                    <table class="data-table">
+                        <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Pay Rate</th><th>Tables</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody id="empTableBody">
+                            ${employees.map(emp => `
+                                <tr>
+                                    <td>${emp.employeeId}</td>
+                                    <td>${emp.name}</td>
+                                    <td>${emp.role}</td>
+                                    <td>${emp.payRate ? '$' + emp.payRate.toFixed(2) + '/hr' : '-'}</td>
+                                    <td>${emp.assignedTables || '-'}</td>
+                                    <td><span class="badge ${emp.isActive ? 'badge-ready' : 'badge-rejected'}">${emp.isActive ? 'Active' : 'Inactive'}</span></td>
+                                    <td>
+                                        <button class="btn btn-secondary btn-small" onclick="mgrEditEmployee('${emp.employeeId}')">Edit</button>
+                                        ${emp.role === 'WAITER' && emp.isActive ? `<button class="btn btn-warning btn-small" onclick="mgrAssignTables('${emp.employeeId}', '${emp.name}')" style="margin-left:4px">Assign Tables</button>` : ''}
+                                        ${emp.isActive ? `<button class="btn btn-danger btn-small" onclick="mgrDeactivateEmployee('${emp.employeeId}')" style="margin-left:4px">Deactivate</button>` : ''}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } catch (e) {
+            document.getElementById('tabContent').innerHTML = `<div class="card"><p style="color:var(--danger)">${e.message}</p></div>`;
+        }
+    }
+
+    window.mgrAssignTables = function(waiterId, waiterName) {
+        let selectedTables = [];
+        const ROWS = ['A', 'B', 'C', 'D', 'E', 'F'];
+        const COLS = [1, 2, 3, 4, 5, 6];
+
+        document.getElementById('tabContent').innerHTML += `
+            <div class="modal-overlay" id="assignTablesModal">
+                <div class="modal" style="max-width:650px">
+                    <button class="modal-close" onclick="document.getElementById('assignTablesModal').remove()">&times;</button>
+                    <div class="modal-title">Assign Tables to ${waiterName}</div>
+                    <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:16px">Click tables to select/deselect. Selected tables are highlighted in purple.</p>
+                    <div id="assignGrid" style="display:grid;grid-template-columns:40px repeat(6,1fr);gap:6px;max-width:500px;margin:0 auto 16px"></div>
+                    <div id="assignSelected" style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:16px">Selected: none</div>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" id="assignSaveBtn">Save Assignments</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('assignTablesModal').remove()">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const grid = document.getElementById('assignGrid');
+
+        // Column headers
+        const corner = document.createElement('div');
+        corner.className = 'floor-header';
+        grid.appendChild(corner);
+        for (const col of COLS) {
+            const h = document.createElement('div');
+            h.className = 'floor-header';
+            h.textContent = col;
+            grid.appendChild(h);
+        }
+
+        // Table cells
+        for (const row of ROWS) {
+            const rh = document.createElement('div');
+            rh.className = 'floor-header';
+            rh.textContent = row;
+            grid.appendChild(rh);
+
+            for (const col of COLS) {
+                const tableId = row + col;
+                const cell = document.createElement('div');
+                cell.className = 'floor-cell clean';
+                cell.style.cursor = 'pointer';
+                cell.innerHTML = `<span class="table-label">${tableId}</span>`;
+                cell.addEventListener('click', () => {
+                    const idx = selectedTables.indexOf(tableId);
+                    if (idx >= 0) {
+                        selectedTables.splice(idx, 1);
+                        cell.className = 'floor-cell clean';
+                        cell.style.outline = '';
+                        cell.style.boxShadow = '';
+                    } else {
+                        selectedTables.push(tableId);
+                        cell.className = 'floor-cell clean assigned-table';
+                    }
+                    document.getElementById('assignSelected').textContent =
+                        selectedTables.length > 0 ? 'Selected: ' + selectedTables.join(', ') : 'Selected: none';
+                });
+                grid.appendChild(cell);
+            }
+        }
+
+        document.getElementById('assignSaveBtn').addEventListener('click', async () => {
+            try {
+                await api.assignTablesBulk(waiterId, selectedTables);
+                showToast('Tables assigned to ' + waiterName, 'success');
+                document.getElementById('assignTablesModal').remove();
+                renderEmployeesTab();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        });
+    };
+
+    window.mgrShowAddEmployee = function() {
+        document.getElementById('tabContent').innerHTML += `
+            <div class="modal-overlay" id="addEmpModal">
+                <div class="modal">
+                    <button class="modal-close" onclick="document.getElementById('addEmpModal').remove()">&times;</button>
+                    <div class="modal-title">Add Employee</div>
+                    <div class="form-group">
+                        <label class="form-label">Employee ID (6 chars)</label>
+                        <input class="form-input" id="newEmpId" maxlength="6" placeholder="e.g. WTR006" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">First Name</label>
+                        <input class="form-input" id="newEmpFirst" placeholder="First name" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Last Name</label>
+                        <input class="form-input" id="newEmpLast" placeholder="Last name" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Role</label>
+                        <select class="form-select" id="newEmpRole">
+                            <option value="WAITER">Waiter</option>
+                            <option value="CHEF">Chef</option>
+                            <option value="BUSBOY">Bus Boy</option>
+                            <option value="MANAGER">Manager</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Pay Rate ($/hr)</label>
+                        <input class="form-input" id="newEmpPay" type="number" step="0.50" placeholder="12.50" />
+                    </div>
+                    <button class="btn btn-primary" onclick="mgrSaveNewEmployee()">Save Employee</button>
+                </div>
+            </div>
+        `;
+    };
+
+    window.mgrSaveNewEmployee = async function() {
+        const id = document.getElementById('newEmpId').value.trim().toUpperCase();
+        const first = document.getElementById('newEmpFirst').value.trim();
+        const last = document.getElementById('newEmpLast').value.trim();
+        const role = document.getElementById('newEmpRole').value;
+        const pay = parseFloat(document.getElementById('newEmpPay').value);
+
+        if (!id || !first || !last) { showToast('Please fill all required fields', 'error'); return; }
+
+        try {
+            await api.createEmployee({
+                employeeId: id,
+                name: first + ' ' + last,
+                firstName: first,
+                lastName: last,
+                role: role,
+                payRate: pay || null
+            });
+            showToast('Employee created (default password: Shift1)', 'success');
+            document.getElementById('addEmpModal').remove();
+            renderEmployeesTab();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    };
+
+    window.mgrEditEmployee = async function(empId) {
+        try {
+            const emp = await api.request('GET', `/api/employees/${empId}`);
+            document.getElementById('tabContent').innerHTML += `
+                <div class="modal-overlay" id="editEmpModal">
+                    <div class="modal">
+                        <button class="modal-close" onclick="document.getElementById('editEmpModal').remove()">&times;</button>
+                        <div class="modal-title">Edit ${emp.name}</div>
+                        <div class="form-group">
+                            <label class="form-label">Name</label>
+                            <input class="form-input" id="editEmpName" value="${emp.name}" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Role</label>
+                            <select class="form-select" id="editEmpRole">
+                                <option value="WAITER" ${emp.role==='WAITER'?'selected':''}>Waiter</option>
+                                <option value="CHEF" ${emp.role==='CHEF'?'selected':''}>Chef</option>
+                                <option value="BUSBOY" ${emp.role==='BUSBOY'?'selected':''}>Bus Boy</option>
+                                <option value="MANAGER" ${emp.role==='MANAGER'?'selected':''}>Manager</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Pay Rate ($/hr)</label>
+                            <input class="form-input" id="editEmpPay" type="number" step="0.50" value="${emp.payRate || ''}" />
+                        </div>
+                        <button class="btn btn-primary" onclick="mgrSaveEditEmployee('${empId}')">Save Changes</button>
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    };
+
+    window.mgrSaveEditEmployee = async function(empId) {
+        try {
+            await api.updateEmployee(empId, {
+                name: document.getElementById('editEmpName').value,
+                role: document.getElementById('editEmpRole').value,
+                payRate: parseFloat(document.getElementById('editEmpPay').value) || null
+            });
+            showToast('Employee updated', 'success');
+            document.getElementById('editEmpModal').remove();
+            renderEmployeesTab();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    };
+
+    window.mgrDeactivateEmployee = async function(empId) {
+        if (!confirm('Deactivate employee ' + empId + '?')) return;
+        try {
+            await api.deactivateEmployee(empId);
+            showToast('Employee deactivated', 'success');
+            renderEmployeesTab();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    };
+
+    // ── Menu Tab ──
+    async function renderMenuTab() {
+        document.getElementById('tabContent').innerHTML = '<div class="card"><p>Loading menu...</p></div>';
+        try {
+            const items = await api.getAllMenuItems();
+            const categories = [...new Set(items.map(i => i.category))];
+
+            document.getElementById('tabContent').innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Menu Management</h2>
+                        <span style="font-size:0.8rem;color:var(--text-secondary)">${items.length} items</span>
+                    </div>
+                    ${categories.map(cat => `
+                        <h3 style="font-size:0.85rem;color:var(--accent);margin:16px 0 8px;text-transform:uppercase;letter-spacing:1px">${cat}</h3>
+                        <table class="data-table">
+                            <thead><tr><th>Name</th><th>Price</th><th>Stock</th><th>Expiry</th><th>Sold</th><th>Revenue</th><th>Status</th><th>Actions</th></tr></thead>
+                            <tbody>
+                                ${items.filter(i => i.category === cat).map(item => `
+                                    <tr>
+                                        <td>${item.name}</td>
+                                        <td>$${item.price.toFixed(2)}</td>
+                                        <td>${item.stock != null ? (item.stock <= 5 ? `<span style="color:var(--danger);font-weight:700">${item.stock}</span>` : item.stock) : '-'}</td>
+                                        <td style="font-size:0.75rem">${item.expirationDate || '-'}</td>
+                                        <td>${item.itemsSold}</td>
+                                        <td>$${item.totalRevenue.toFixed(2)}</td>
+                                        <td>
+                                            <button class="btn btn-small ${item.isActive ? 'btn-success' : 'btn-danger'}"
+                                                    onclick="mgrToggleMenu(${item.itemId}, ${!item.isActive})">
+                                                ${item.isActive ? 'Active' : 'Inactive'}
+                                            </button>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-secondary btn-small" onclick="mgrEditStock(${item.itemId}, '${item.name.replace(/'/g, "\\'")}', ${item.stock != null ? item.stock : 'null'}, '${item.expirationDate || ''}')">Stock</button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `).join('')}
+                </div>
+            `;
+        } catch (e) {
+            document.getElementById('tabContent').innerHTML = `<div class="card"><p style="color:var(--danger)">${e.message}</p></div>`;
+        }
+    }
+
+    window.mgrToggleMenu = async function(itemId, newState) {
+        try {
+            await api.toggleMenuAvailability(itemId, newState);
+            renderMenuTab();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    };
+
+    window.mgrEditStock = function(itemId, itemName, currentStock, currentExpiry) {
+        document.getElementById('tabContent').innerHTML += `
+            <div class="modal-overlay" id="stockModal">
+                <div class="modal" style="max-width:400px">
+                    <button class="modal-close" onclick="document.getElementById('stockModal').remove()">&times;</button>
+                    <div class="modal-title">Inventory: ${itemName}</div>
+                    <div class="form-group">
+                        <label class="form-label">Stock Count</label>
+                        <input class="form-input" id="stockCount" type="number" min="0" value="${currentStock != null ? currentStock : ''}" placeholder="Enter stock count" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Expiration Date</label>
+                        <input class="form-input" id="stockExpiry" type="date" value="${currentExpiry}" />
+                    </div>
+                    <button class="btn btn-primary" id="stockSaveBtn">Save</button>
+                </div>
+            </div>
+        `;
+        document.getElementById('stockSaveBtn').addEventListener('click', async () => {
+            const stock = document.getElementById('stockCount').value;
+            const expDate = document.getElementById('stockExpiry').value;
+            try {
+                await api.updateMenuStock(itemId, stock !== '' ? parseInt(stock) : null, expDate || null);
+                showToast('Stock updated', 'success');
+                document.getElementById('stockModal').remove();
+                renderMenuTab();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        });
+    };
+
+    // ── Analytics Tab ──
+    async function renderAnalyticsTab() {
+        // Destroy any existing Chart.js instances before re-rendering
+        Object.values(_analyticsCharts).forEach(c => { try { c.destroy(); } catch (_) {} });
+        _analyticsCharts = {};
+
+        const period = _analyticsPeriod;
+
+        // Render shell with period tabs immediately so clicks feel instant
+        document.getElementById('tabContent').innerHTML = `
+            <div class="an-header">
+                <div>
+                    <div class="an-brand">SWIFTSERVE</div>
+                    <div class="an-title">ANALYTICS &amp; REPORT</div>
+                </div>
+                <div class="an-tabs">
+                    <button class="an-tab ${period==='day'?'active':''}" onclick="mgrSetPeriod('day')">Today</button>
+                    <button class="an-tab ${period==='week'?'active':''}" onclick="mgrSetPeriod('week')">This Week</button>
+                    <button class="an-tab ${period==='month'?'active':''}" onclick="mgrSetPeriod('month')">This Month</button>
+                </div>
+            </div>
+            <p style="color:var(--text-secondary);font-size:0.85rem;padding:8px 0">Loading&hellip;</p>
+        `;
+
+        try {
+            const [earnings, hourly, topItems, personnel, prepTime] = await Promise.all([
+                api.getEarnings(period),
+                api.getHourlyBreakdown(),
+                api.getItemPerformance(),
+                api.getPersonnelEfficiency(),
+                api.getPrepTime()
+            ]);
+
+            const totalRevenue = earnings.totalRevenue  || 0;
+            const cashPayments = earnings.cashPayments  || 0;
+            const cardPayments = earnings.cardPayments  || 0;
+            const daily        = earnings.dailyBreakdown || [];
+            const avgDaily     = totalRevenue / (daily.length || 1);
+            const totalPmts    = cashPayments + cardPayments;
+            const cardPct      = totalPmts > 0 ? Math.round(cardPayments / totalPmts * 100) : 0;
+            const cashPct      = totalPmts > 0 ? Math.round(cashPayments / totalPmts * 100) : 0;
+
+            // Bar chart: hourly for "Today", daily breakdown for week/month
+            const barLabels = period === 'day' ? hourly.map(h => h.hour)    : daily.map(d => d.earnDate);
+            const barData   = period === 'day' ? hourly.map(h => h.revenue) : daily.map(d => d.revenue);
+
+            const periodLabel = period === 'day'  ? 'TODAY'
+                              : period === 'week' ? 'THIS WEEK'
+                              : new Date().toLocaleDateString('en-US', {month:'long', year:'numeric'}).toUpperCase();
+
+            const top5 = topItems.slice(0, 5);
+
+            document.getElementById('tabContent').innerHTML = `
+                <!-- Header -->
+                <div class="an-header">
+                    <div>
+                        <div class="an-brand">SWIFTSERVE</div>
+                        <div class="an-title">ANALYTICS &amp; REPORT</div>
+                    </div>
+                    <div class="an-tabs">
+                        <button class="an-tab ${period==='day'?'active':''}" onclick="mgrSetPeriod('day')">Today</button>
+                        <button class="an-tab ${period==='week'?'active':''}" onclick="mgrSetPeriod('week')">This Week</button>
+                        <button class="an-tab ${period==='month'?'active':''}" onclick="mgrSetPeriod('month')">This Month</button>
+                    </div>
+                </div>
+
+                <!-- Stat Cards -->
+                <div class="an-stats">
+                    <div class="an-stat-card" style="border-left-color:var(--accent)">
+                        <div class="an-stat-label">Total Revenue</div>
+                        <div class="an-stat-value">$${totalRevenue.toFixed(2)}</div>
+                    </div>
+                    <div class="an-stat-card" style="border-left-color:#666">
+                        <div class="an-stat-label">Cash Payments</div>
+                        <div class="an-stat-value">${cashPayments}</div>
+                    </div>
+                    <div class="an-stat-card" style="border-left-color:#3498db">
+                        <div class="an-stat-label">Card Payments</div>
+                        <div class="an-stat-value">${cardPayments}</div>
+                    </div>
+                    <div class="an-stat-card" style="border-left-color:var(--success)">
+                        <div class="an-stat-label">Avg Daily Revenue</div>
+                        <div class="an-stat-value">$${avgDaily.toFixed(2)}</div>
+                    </div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="an-charts-row">
+                    <!-- Bar Chart -->
+                    <div class="card an-bar-card">
+                        <div class="an-chart-title">DAILY REVENUE &mdash; ${periodLabel}</div>
+                        <div class="an-bar-wrap">
+                            <canvas id="revenueBarChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Right column: pie + top items -->
+                    <div class="an-right-col">
+                        <div class="card an-pie-card">
+                            <div class="an-chart-title">PAYMENT METHODS</div>
+                            <div class="an-pie-wrap">
+                                <canvas id="paymentPieChart"></canvas>
+                            </div>
+                            <div class="an-pie-legend">
+                                <div class="an-legend-item">
+                                    <span class="an-legend-dot" style="background:var(--accent)"></span>Card ${cardPct}%
+                                </div>
+                                <div class="an-legend-item">
+                                    <span class="an-legend-dot" style="background:#888"></span>Cash ${cashPct}%
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card an-top-card">
+                            <div class="an-chart-title">TOP ITEMS</div>
+                            <ol class="an-top-list">
+                                ${top5.length > 0 ? top5.map((item, i) => `
+                                    <li class="an-top-item">
+                                        <span class="an-top-rank">${i+1}</span>
+                                        <span class="an-top-name">${item.name}</span>
+                                        <span class="an-top-rev">$${item.totalRevenue.toFixed(2)}</span>
+                                    </li>
+                                `).join('') : '<li class="an-top-item" style="color:var(--text-secondary);list-style:none">No data yet</li>'}
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Worker Performance -->
+                <div class="card" style="margin-top:16px">
+                    <div class="card-header">
+                        <h2 class="card-title">Worker Performance</h2>
+                        ${prepTime.avgPrepTimeMinutes != null ? `<span style="font-size:0.75rem;color:var(--text-secondary)">Avg prep: <strong>${prepTime.avgPrepTimeMinutes} min</strong></span>` : ''}
+                    </div>
+                    ${personnel.length > 0 ? `
+                        <table class="data-table">
+                            <thead><tr><th>Waiter</th><th>Total Orders</th><th>Completed</th><th>Avg Turnaround</th></tr></thead>
+                            <tbody>
+                                ${personnel.map(p => `
+                                    <tr>
+                                        <td>${p.waiterName}</td>
+                                        <td>${p.totalOrders}</td>
+                                        <td>${p.completedOrders}</td>
+                                        <td>${p.avgTurnaroundMinutes != null ? p.avgTurnaroundMinutes + ' min' : '&mdash;'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    ` : '<p style="color:var(--text-secondary);font-size:0.8rem">No worker data for this period.</p>'}
+                </div>
+            `;
+
+            // ── Draw bar chart ──
+            if (barLabels.length > 0 && typeof Chart !== 'undefined') {
+                const barEl = document.getElementById('revenueBarChart');
+                if (barEl) {
+                    _analyticsCharts.bar = new Chart(barEl, {
+                        type: 'bar',
+                        data: {
+                            labels: barLabels,
+                            datasets: [{
+                                label: 'Revenue ($)',
+                                data: barData,
+                                backgroundColor: 'rgba(242,90,80,0.85)',
+                                borderColor: '#f25a50',
+                                borderWidth: 1,
+                                borderRadius: 4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                x: {
+                                    grid: { color: 'rgba(255,255,255,0.05)' },
+                                    ticks: { color: '#a0a0c0', font: { size: 10 }, maxRotation: 45 }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    grid: { color: 'rgba(255,255,255,0.05)' },
+                                    ticks: { color: '#a0a0c0', font: { size: 10 }, callback: v => '$' + v }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+
+            // ── Draw doughnut chart ──
+            if (totalPmts > 0 && typeof Chart !== 'undefined') {
+                const pieEl = document.getElementById('paymentPieChart');
+                if (pieEl) {
+                    _analyticsCharts.pie = new Chart(pieEl, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Card', 'Cash'],
+                            datasets: [{
+                                data: [cardPayments, cashPayments],
+                                backgroundColor: ['#f25a50', '#888888'],
+                                borderWidth: 0
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: { callbacks: {
+                                    label: ctx => ` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw / totalPmts * 100)}%)`
+                                }}
+                            },
+                            cutout: '62%'
+                        }
+                    });
+                }
+            }
+
+        } catch (e) {
+            document.getElementById('tabContent').innerHTML = `<div class="card"><p style="color:var(--danger)">${e.message}</p></div>`;
+        }
+    }
+
+    window.mgrSetPeriod = function(period) {
+        _analyticsPeriod = period;
+        renderAnalyticsTab();
+    };
+
+    // ── Refunds Tab ──
+    async function renderRefundsTab() {
+        document.getElementById('tabContent').innerHTML = '<div class="card"><p>Loading refunds...</p></div>';
+        try {
+            const refunds = await api.request('GET', '/api/refunds');
+            refunds.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            document.getElementById('tabContent').innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Refund Requests</h2>
+                    </div>
+                    ${refunds.length === 0 ? '<p style="color:var(--text-secondary);font-size:0.85rem">No refund requests.</p>' : `
+                    <table class="data-table">
+                        <thead><tr><th>ID</th><th>Order</th><th>Waiter</th><th>Request Reason</th><th>Amount</th><th>Status</th><th>Decision Notes</th><th>Actions</th></tr></thead>
+                        <tbody>
+                            ${refunds.map(r => `
+                                <tr>
+                                    <td>#${r.id}</td>
+                                    <td>#${r.orderId}</td>
+                                    <td>${r.waiterId}</td>
+                                    <td>${r.reason}</td>
+                                    <td>$${r.amount.toFixed(2)}</td>
+                                    <td><span class="badge badge-${r.status.toLowerCase()}">${r.status}</span></td>
+                                    <td style="font-size:0.75rem;color:var(--text-secondary);max-width:200px">
+                                        ${r.status === 'REJECTED' && r.rejectionReason
+                                            ? `<span style="color:var(--danger)">${r.rejectionReason}</span>`
+                                            : (r.managerId ? r.managerId : '–')}
+                                    </td>
+                                    <td>
+                                        ${r.status === 'PENDING' ? `
+                                            <button class="btn btn-success btn-small" onclick="mgrApproveRefund(${r.id})">Approve</button>
+                                            <button class="btn btn-danger btn-small" onclick="mgrShowRejectModal(${r.id})" style="margin-left:4px">Reject</button>
+                                        ` : ''}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>`}
+                </div>
+            `;
+        } catch (e) {
+            document.getElementById('tabContent').innerHTML = `<div class="card"><p style="color:var(--danger)">${e.message}</p></div>`;
+        }
+    }
+
+    window.mgrApproveRefund = async function(id) {
+        try {
+            await api.approveRefund(id, employee.employeeId);
+            showToast('Refund approved', 'success');
+            renderRefundsTab();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    };
+
+    window.mgrShowRejectModal = function(id) {
+        document.getElementById('tabContent').innerHTML += `
+            <div class="modal-overlay" id="rejectRefundModal">
+                <div class="modal" style="max-width:440px">
+                    <button class="modal-close" onclick="document.getElementById('rejectRefundModal').remove()">&times;</button>
+                    <div class="modal-title">Reject Refund #${id}</div>
+                    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:16px">
+                        Please provide a reason for rejecting this refund request. This will be recorded and visible in the refund history.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Rejection Reason <span style="color:var(--danger)">*</span></label>
+                        <textarea class="form-input" id="rejectReasonInput" rows="4"
+                            placeholder="e.g. Order was confirmed correct by kitchen staff..."
+                            style="resize:vertical;min-height:90px"></textarea>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:4px">
+                        <button class="btn btn-danger" id="confirmRejectBtn">Confirm Rejection</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('rejectRefundModal').remove()">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('confirmRejectBtn').addEventListener('click', async () => {
+            const reason = document.getElementById('rejectReasonInput').value.trim();
+            if (!reason) {
+                document.getElementById('rejectReasonInput').style.borderColor = 'var(--danger)';
+                document.getElementById('rejectReasonInput').placeholder = 'Reason is required before rejecting.';
+                return;
+            }
+            try {
+                await api.rejectRefund(id, employee.employeeId, reason);
+                showToast('Refund rejected', 'success');
+                document.getElementById('rejectRefundModal').remove();
+                renderRefundsTab();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        });
+    };
+
+    // ── Timesheets Tab ──
+    async function renderTimesheetsTab() {
+        document.getElementById('tabContent').innerHTML = '<div class="card"><p>Loading timesheets...</p></div>';
+        try {
+            const [allTimesheets, allEmployees] = await Promise.all([
+                api.request('GET', '/api/timesheets'),
+                api.getAllEmployees()
+            ]);
+
+            // Group timesheets by employee
+            const empMap = new Map();
+            for (const emp of allEmployees) {
+                empMap.set(emp.employeeId, emp);
+            }
+
+            const byEmp = new Map();
+            for (const ts of allTimesheets) {
+                if (!byEmp.has(ts.userId)) byEmp.set(ts.userId, []);
+                byEmp.get(ts.userId).push(ts);
+            }
+
+            // Compute this-week totals for summary
+            const today     = new Date();
+            const monday    = new Date(today);
+            const dayOfWeek = today.getDay();
+            const diff      = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            monday.setDate(today.getDate() + diff);
+            monday.setHours(0, 0, 0, 0);
+            const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+
+            const empRows = allEmployees.filter(e => byEmp.has(e.employeeId)).map(emp => {
+                const sheets      = byEmp.get(emp.employeeId);
+                const weekSheets  = sheets.filter(ts => {
+                    const d = new Date(ts.shiftDate + 'T00:00:00');
+                    return d >= monday && d <= sunday;
+                });
+                const weekHours   = weekSheets.filter(s => s.hoursWorked).reduce((s, t) => s + t.hoursWorked, 0);
+                const estPay      = emp.payRate ? weekHours * emp.payRate : null;
+                const isClockedIn = sheets.some(s => !s.clockOutTime);
+                return { emp, weekHours, estPay, isClockedIn, sheetCount: sheets.length };
+            });
+
+            document.getElementById('tabContent').innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Staff Timesheets</h2>
+                        <span style="font-size:0.8rem;color:var(--text-secondary)">
+                            Week of ${monday.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${sunday.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+                        </span>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Employee</th><th>Role</th><th>Status</th><th>Hrs This Week</th><th>Est. Pay</th><th>Total Shifts</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            ${empRows.map(({ emp, weekHours, estPay, isClockedIn, sheetCount }) => `
+                                <tr>
+                                    <td>
+                                        <div style="font-weight:600">${emp.name}</div>
+                                        <div style="font-size:0.7rem;color:var(--text-secondary)">${emp.employeeId}</div>
+                                    </td>
+                                    <td>${emp.role}</td>
+                                    <td>${isClockedIn
+                                        ? '<span class="ts-badge ts-badge-open" style="font-size:0.65rem">Clocked In</span>'
+                                        : '<span style="font-size:0.75rem;color:var(--text-secondary)">–</span>'}</td>
+                                    <td><strong>${weekHours.toFixed(1)}h</strong></td>
+                                    <td>${estPay != null ? '$' + estPay.toFixed(2) : '–'}</td>
+                                    <td>${sheetCount}</td>
+                                    <td>
+                                        <button class="btn btn-secondary btn-small"
+                                            onclick="openTimesheetOverlay('${emp.employeeId}', '${emp.name}', ${emp.payRate || 0})">
+                                            View
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } catch (e) {
+            document.getElementById('tabContent').innerHTML = `<div class="card"><p style="color:var(--danger)">${e.message}</p></div>`;
+        }
+    }
+
+    // Initialize with floor map tab
+    renderFloorTab();
+
+    // Auto-refresh floor map when on that tab
+    setInterval(() => {
+        if (currentTab === 'floor') refreshFloorMap('mgrFloorMap');
+    }, 5000);
+})();
