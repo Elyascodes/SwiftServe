@@ -29,3 +29,9 @@ target/
 # Logs
 *.log
 npm-debug.log*
+
+# Claude Code session files
+.claude/
+
+# SQLite database (runtime data)
+backend/data/
