@@ -37,16 +37,10 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
+          "target": "zip",
           "arch": ["x64"]
         }
       ]
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "deleteAppDataOnUninstall": false,
-      "installerHeaderIcon": null
     },
     "mac": {
       "target": "dmg",
