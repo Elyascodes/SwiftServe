@@ -111,6 +111,17 @@ public class OrderController {
         order.setReadyAt(LocalDateTime.now());
         orderRepo.save(order);
 
+        // Deduct stock for each item in the order
+        List<OrderItem> items = orderItemRepo.findByOrderOrderId(id);
+        for (OrderItem oi : items) {
+            menuItemRepo.findById(oi.getItemId()).ifPresent(mi -> {
+                if (mi.getStock() != null) {
+                    mi.setStock(Math.max(0, mi.getStock() - oi.getQuantity()));
+                    menuItemRepo.save(mi);
+                }
+            });
+        }
+
         return ResponseEntity.ok(buildOrderResponse(order));
     }
 
