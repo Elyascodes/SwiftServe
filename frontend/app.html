@@ -21,6 +21,7 @@
     <div class="header-right">
         <span class="clock-status clocked-out" id="clockStatus">Clocked Out</span>
         <button class="btn btn-secondary" id="clockBtn" onclick="toggleClock()">Clock In</button>
+        <button class="btn btn-secondary btn-small" onclick="openTimesheetOverlay(employee.employeeId, employee.name, employee.payRate)">My Timesheet</button>
         <button class="btn btn-danger btn-small" onclick="logout()">Logout</button>
     </div>
 </div>
@@ -29,8 +30,16 @@
     <!-- Role-specific content loaded here -->
 </div>
 
+<!-- Timesheet full-screen overlay -->
+<div id="timesheetOverlay" class="ts-overlay" style="display:none">
+    <div class="ts-panel">
+        <div id="timesheetContent"></div>
+    </div>
+</div>
+
 <script src="components/api.js"></script>
 <script src="components/floormap.js"></script>
+<script src="pages/timesheet.js"></script>
 <script>
     // Session management
     const employee = JSON.parse(sessionStorage.getItem('employee') || 'null');

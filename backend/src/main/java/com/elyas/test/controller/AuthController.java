@@ -57,6 +57,7 @@ public class AuthController {
         response.put("employeeId", emp.getEmployeeId());
         response.put("name", emp.getName());
         response.put("role", emp.getRole());
+        response.put("payRate", emp.getPayRate());
         response.put("assignedTables", emp.getAssignedTables());
         return ResponseEntity.ok(response);
     }

@@ -633,29 +633,80 @@
     async function renderTimesheetsTab() {
         document.getElementById('tabContent').innerHTML = '<div class="card"><p>Loading timesheets...</p></div>';
         try {
-            const timesheets = await api.request('GET', '/api/timesheets');
-            timesheets.sort((a, b) => new Date(b.shiftDate) - new Date(a.shiftDate));
+            const [allTimesheets, allEmployees] = await Promise.all([
+                api.request('GET', '/api/timesheets'),
+                api.getAllEmployees()
+            ]);
+
+            // Group timesheets by employee
+            const empMap = new Map();
+            for (const emp of allEmployees) {
+                empMap.set(emp.employeeId, emp);
+            }
+
+            const byEmp = new Map();
+            for (const ts of allTimesheets) {
+                if (!byEmp.has(ts.userId)) byEmp.set(ts.userId, []);
+                byEmp.get(ts.userId).push(ts);
+            }
+
+            // Compute this-week totals for summary
+            const today     = new Date();
+            const monday    = new Date(today);
+            const dayOfWeek = today.getDay();
+            const diff      = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            monday.setDate(today.getDate() + diff);
+            monday.setHours(0, 0, 0, 0);
+            const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+
+            const empRows = allEmployees.filter(e => byEmp.has(e.employeeId)).map(emp => {
+                const sheets      = byEmp.get(emp.employeeId);
+                const weekSheets  = sheets.filter(ts => {
+                    const d = new Date(ts.shiftDate + 'T00:00:00');
+                    return d >= monday && d <= sunday;
+                });
+                const weekHours   = weekSheets.filter(s => s.hoursWorked).reduce((s, t) => s + t.hoursWorked, 0);
+                const estPay      = emp.payRate ? weekHours * emp.payRate : null;
+                const isClockedIn = sheets.some(s => !s.clockOutTime);
+                return { emp, weekHours, estPay, isClockedIn, sheetCount: sheets.length };
+            });
 
             document.getElementById('tabContent').innerHTML = `
                 <div class="card">
                     <div class="card-header">
-                        <h2 class="card-title">All Timesheets</h2>
+                        <h2 class="card-title">Staff Timesheets</h2>
+                        <span style="font-size:0.8rem;color:var(--text-secondary)">
+                            Week of ${monday.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${sunday.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+                        </span>
                     </div>
-                    ${timesheets.length === 0 ? '<p style="color:var(--text-secondary);font-size:0.85rem">No timesheet entries yet.</p>' : `
                     <table class="data-table">
-                        <thead><tr><th>Employee</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th></tr></thead>
+                        <thead>
+                            <tr><th>Employee</th><th>Role</th><th>Status</th><th>Hrs This Week</th><th>Est. Pay</th><th>Total Shifts</th><th></th></tr>
+                        </thead>
                         <tbody>
-                            ${timesheets.map(ts => `
+                            ${empRows.map(({ emp, weekHours, estPay, isClockedIn, sheetCount }) => `
                                 <tr>
-                                    <td>${ts.userId}</td>
-                                    <td>${ts.shiftDate}</td>
-                                    <td>${ts.clockInTime ? new Date(ts.clockInTime).toLocaleTimeString() : '-'}</td>
-                                    <td>${ts.clockOutTime ? new Date(ts.clockOutTime).toLocaleTimeString() : '<span style="color:var(--warning)">Active</span>'}</td>
-                                    <td>${ts.hoursWorked ? ts.hoursWorked.toFixed(1) + 'h' : '-'}</td>
+                                    <td>
+                                        <div style="font-weight:600">${emp.name}</div>
+                                        <div style="font-size:0.7rem;color:var(--text-secondary)">${emp.employeeId}</div>
+                                    </td>
+                                    <td>${emp.role}</td>
+                                    <td>${isClockedIn
+                                        ? '<span class="ts-badge ts-badge-open" style="font-size:0.65rem">Clocked In</span>'
+                                        : '<span style="font-size:0.75rem;color:var(--text-secondary)">–</span>'}</td>
+                                    <td><strong>${weekHours.toFixed(1)}h</strong></td>
+                                    <td>${estPay != null ? '$' + estPay.toFixed(2) : '–'}</td>
+                                    <td>${sheetCount}</td>
+                                    <td>
+                                        <button class="btn btn-secondary btn-small"
+                                            onclick="openTimesheetOverlay('${emp.employeeId}', '${emp.name}', ${emp.payRate || 0})">
+                                            View
+                                        </button>
+                                    </td>
                                 </tr>
                             `).join('')}
                         </tbody>
-                    </table>`}
+                    </table>
                 </div>
             `;
         } catch (e) {

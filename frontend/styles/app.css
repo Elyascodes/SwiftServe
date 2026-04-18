@@ -570,3 +570,299 @@ body {
     background: var(--accent);
     color: white;
 }
+
+/* ═══════════════════════════════════════════════
+   TIMESHEET OVERLAY
+═══════════════════════════════════════════════ */
+
+.ts-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-dark);
+    z-index: 500;
+    overflow-y: auto;
+    justify-content: center;
+    padding: 28px 20px 40px;
+}
+
+.ts-panel {
+    width: 100%;
+    max-width: 860px;
+}
+
+/* Header */
+.ts-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+}
+
+.ts-title {
+    font-size: 1.8rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.ts-subtitle {
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-weight: 600;
+    margin-top: 6px;
+}
+
+.ts-logo {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+    color: var(--accent);
+    letter-spacing: 1px;
+}
+
+.ts-back-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 8px 22px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: background 0.2s;
+}
+.ts-back-btn:hover { background: var(--border); }
+
+/* Week navigator */
+.ts-week-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.ts-nav-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: background 0.2s;
+}
+.ts-nav-btn:hover { background: var(--border); }
+
+.ts-week-label {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 22px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+/* Stat boxes */
+.ts-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.ts-stat {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 4px solid transparent;
+    border-radius: 12px;
+    padding: 18px 20px;
+}
+
+.ts-stat-red    { border-left-color: var(--accent); }
+.ts-stat-dark   { border-left-color: #4a4a6a; }
+.ts-stat-blue   { border-left-color: #3498db; }
+.ts-stat-orange { border-left-color: #f39c12; }
+
+.ts-stat-val {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 6px;
+}
+
+.ts-stat-red    .ts-stat-val { color: var(--accent); }
+.ts-stat-dark   .ts-stat-val { color: var(--text-primary); }
+.ts-stat-blue   .ts-stat-val { color: #3498db; }
+.ts-stat-orange .ts-stat-val { color: #f39c12; }
+
+.ts-stat-lbl {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ts-stat-sub {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+/* Card wrapper */
+.ts-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+/* Table */
+.ts-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.ts-table thead tr {
+    background: #0e0e24;
+}
+
+.ts-table th {
+    padding: 11px 16px;
+    text-align: left;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.ts-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.ts-table tbody tr:last-child td { border-bottom: none; }
+
+.ts-row-open td {
+    background: rgba(243, 156, 18, 0.07);
+}
+
+.ts-row-today td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Badges */
+.ts-badge {
+    display: inline-block;
+    padding: 3px 11px;
+    border-radius: 5px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ts-badge-closed    { background: var(--success);  color: #fff; }
+.ts-badge-open      { background: #f39c12;          color: #fff; }
+.ts-badge-processed { background: #3498db;          color: #fff; }
+
+/* Footer card */
+.ts-footer-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+}
+
+.ts-total-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+    font-size: 0.85rem;
+}
+
+.ts-total-label { color: var(--text-secondary); font-weight: 600; }
+.ts-total-hours { color: var(--text-primary);   font-weight: 600; }
+.ts-est-pay     { color: var(--accent);          font-weight: 700; margin-left: auto; font-size: 1rem; }
+
+.ts-actions { display: flex; gap: 12px; }
+
+.ts-clockout-btn {
+    flex: 1;
+    padding: 14px;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.ts-history-btn { min-width: 140px; }
+
+/* History filter bar */
+.ts-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 20px;
+}
+
+.ts-filter-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-right: 4px;
+}
+
+.ts-filter-tab {
+    padding: 6px 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.ts-filter-tab.active    { background: var(--accent); color: white; }
+.ts-filter-tab:hover:not(.active) { color: var(--text-primary); }
+
+/* History week blocks */
+.ts-week-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 14px;
+}
+
+.ts-week-block-hdr {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-input);
+    border-bottom: 1px solid var(--border);
+}
+
+.ts-week-block-title {
+    flex: 1;
+    font-weight: 700;
+    font-size: 0.88rem;
+}
+
+.ts-week-block-meta {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
