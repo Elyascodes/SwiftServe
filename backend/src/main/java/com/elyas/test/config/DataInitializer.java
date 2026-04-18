@@ -49,6 +49,7 @@ public class DataInitializer implements CommandLineRunner {
         seedAnalyticsData();
         seedTimesheets();
         seedRefunds();
+        migrateTableAssignments();
     }
 
     private void seedEmployees() {
@@ -56,24 +57,25 @@ public class DataInitializer implements CommandLineRunner {
 
         String defaultHash = bcrypt.encode("Shift1");
 
-        // { employeeId, name, firstName, lastName, role, payRate }
+        // { employeeId, name, firstName, lastName, role, payRate, assignedTables }
         Object[][] employees = {
-            { "MGR001", "Jordan Mitchell",  "Jordan",  "Mitchell", "MANAGER", 25.00 },
+            { "MGR001", "Jordan Mitchell",  "Jordan",  "Mitchell", "MANAGER", 25.00, null },
 
-            { "WTR001", "Alex Rivera",      "Alex",    "Rivera",   "WAITER",  12.50 },
-            { "WTR002", "Brianna Cole",     "Brianna", "Cole",     "WAITER",  12.50 },
-            { "WTR003", "Carlos Mendez",    "Carlos",  "Mendez",   "WAITER",  12.50 },
-            { "WTR004", "Dana Owens",       "Dana",    "Owens",    "WAITER",  12.50 },
-            { "WTR005", "Evan Brooks",      "Evan",    "Brooks",   "WAITER",  12.50 },
+            // Each waiter owns a section of the 6×6 floor
+            { "WTR001", "Alex Rivera",      "Alex",    "Rivera",   "WAITER",  12.50, "A1,A2,A3,A4,A5,A6" },
+            { "WTR002", "Brianna Cole",     "Brianna", "Cole",     "WAITER",  12.50, "B1,B2,B3,B4,B5,B6" },
+            { "WTR003", "Carlos Mendez",    "Carlos",  "Mendez",   "WAITER",  12.50, "C1,C2,C3,C4,C5,C6" },
+            { "WTR004", "Dana Owens",       "Dana",    "Owens",    "WAITER",  12.50, "D1,D2,D3,D4,D5,D6" },
+            { "WTR005", "Evan Brooks",      "Evan",    "Brooks",   "WAITER",  12.50, "E1,E2,E3,E4,E5,E6,F1,F2,F3,F4,F5,F6" },
 
-            { "BSB001", "Faith Harris",     "Faith",   "Harris",   "BUSBOY",  10.00 },
-            { "BSB002", "Gabriel Torres",   "Gabriel", "Torres",   "BUSBOY",  10.00 },
+            { "BSB001", "Faith Harris",     "Faith",   "Harris",   "BUSBOY",  10.00, null },
+            { "BSB002", "Gabriel Torres",   "Gabriel", "Torres",   "BUSBOY",  10.00, null },
 
-            { "CHF001", "Hannah Lee",       "Hannah",  "Lee",      "CHEF",    15.00 },
-            { "CHF002", "Isaac Grant",      "Isaac",   "Grant",    "CHEF",    15.00 },
-            { "CHF003", "Jasmine White",    "Jasmine", "White",    "CHEF",    15.00 },
-            { "CHF004", "Kevin Brown",      "Kevin",   "Brown",    "CHEF",    15.00 },
-            { "CHF005", "Laura Sanchez",    "Laura",   "Sanchez",  "CHEF",    15.00 },
+            { "CHF001", "Hannah Lee",       "Hannah",  "Lee",      "CHEF",    15.00, null },
+            { "CHF002", "Isaac Grant",      "Isaac",   "Grant",    "CHEF",    15.00, null },
+            { "CHF003", "Jasmine White",    "Jasmine", "White",    "CHEF",    15.00, null },
+            { "CHF004", "Kevin Brown",      "Kevin",   "Brown",    "CHEF",    15.00, null },
+            { "CHF005", "Laura Sanchez",    "Laura",   "Sanchez",  "CHEF",    15.00, null },
         };
 
         for (Object[] row : employees) {
@@ -84,6 +86,7 @@ public class DataInitializer implements CommandLineRunner {
             emp.setLastName((String) row[3]);
             emp.setRole((String) row[4]);
             emp.setPayRate((Double) row[5]);
+            emp.setAssignedTables((String) row[6]);
             emp.setPasswordHash(defaultHash);
             emp.setIsActive(true);
             userRepo.save(emp);
@@ -461,5 +464,28 @@ public class DataInitializer implements CommandLineRunner {
         refundRepo.save(r5);
 
         System.out.println(">>> SwiftServe: seeded 5 refund requests");
+    }
+
+    /**
+     * Back-fills default table assignments for any waiter who currently has none.
+     * Safe to run on existing databases — only touches null/empty assignedTables.
+     */
+    private void migrateTableAssignments() {
+        java.util.Map<String, String> defaults = new java.util.LinkedHashMap<>();
+        defaults.put("WTR001", "A1,A2,A3,A4,A5,A6");
+        defaults.put("WTR002", "B1,B2,B3,B4,B5,B6");
+        defaults.put("WTR003", "C1,C2,C3,C4,C5,C6");
+        defaults.put("WTR004", "D1,D2,D3,D4,D5,D6");
+        defaults.put("WTR005", "E1,E2,E3,E4,E5,E6,F1,F2,F3,F4,F5,F6");
+
+        for (java.util.Map.Entry<String, String> entry : defaults.entrySet()) {
+            userRepo.findByEmployeeId(entry.getKey()).ifPresent(u -> {
+                if (u.getAssignedTables() == null || u.getAssignedTables().isBlank()) {
+                    u.setAssignedTables(entry.getValue());
+                    userRepo.save(u);
+                    System.out.println(">>> SwiftServe: assigned tables to " + u.getEmployeeId());
+                }
+            });
+        }
     }
 }
