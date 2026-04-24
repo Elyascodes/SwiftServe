@@ -3,6 +3,7 @@ package com.elyas.test.controller;
 import com.elyas.test.model.EarningsByDay;
 import com.elyas.test.model.MenuItem;
 import com.elyas.test.model.Order;
+import com.elyas.test.model.OrderItem;
 import com.elyas.test.repository.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,20 +21,26 @@ public class AnalyticsController {
     private final EarningsByDayRepository earningsRepo;
     private final MenuItemRepository menuItemRepo;
     private final OrderRepository orderRepo;
+    private final OrderItemRepository orderItemRepo;
     private final ExpenseRepository expenseRepo;
     private final UserRepository userRepo;
 
     public AnalyticsController(EarningsByDayRepository earningsRepo,
                                MenuItemRepository menuItemRepo,
                                OrderRepository orderRepo,
+                               OrderItemRepository orderItemRepo,
                                ExpenseRepository expenseRepo,
                                UserRepository userRepo) {
         this.earningsRepo = earningsRepo;
         this.menuItemRepo = menuItemRepo;
         this.orderRepo = orderRepo;
+        this.orderItemRepo = orderItemRepo;
         this.expenseRepo = expenseRepo;
         this.userRepo = userRepo;
     }
+
+    private static double nz(Double d) { return d == null ? 0.0 : d; }
+    private static int nz(Integer i) { return i == null ? 0 : i; }
 
     @GetMapping("/earnings")
     public Map<String, Object> getEarnings(@RequestParam(defaultValue = "day") String period) {
@@ -54,9 +61,9 @@ public class AnalyticsController {
 
         List<EarningsByDay> earnings = earningsRepo.findByEarnDateBetween(start, today);
 
-        double totalRevenue = earnings.stream().mapToDouble(EarningsByDay::getRevenue).sum();
-        int totalCash = earnings.stream().mapToInt(EarningsByDay::getCashPayments).sum();
-        int totalCard = earnings.stream().mapToInt(EarningsByDay::getCardPayments).sum();
+        double totalRevenue = earnings.stream().mapToDouble(e -> nz(e.getRevenue())).sum();
+        int totalCash = earnings.stream().mapToInt(e -> nz(e.getCashPayments())).sum();
+        int totalCard = earnings.stream().mapToInt(e -> nz(e.getCardPayments())).sum();
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("period", period);
@@ -77,21 +84,32 @@ public class AnalyticsController {
 
         List<Order> todayOrders = orderRepo.findByCreatedAtBetween(startOfDay, endOfDay);
 
-        // Group completed orders by hour
+        // Group completed orders by hour of creation
         Map<Integer, List<Order>> byHour = todayOrders.stream()
                 .filter(o -> "COMPLETE".equals(o.getStatus()))
+                .filter(o -> o.getCreatedAt() != null)
                 .collect(Collectors.groupingBy(o -> o.getCreatedAt().getHour()));
 
         List<Map<String, Object>> hourly = new ArrayList<>();
-        for (int h = 0; h < 24; h++) {
+        // Standard service window — always return a consistent range so charts render predictably
+        for (int h = 8; h < 23; h++) {
             List<Order> ordersInHour = byHour.getOrDefault(h, Collections.emptyList());
-            if (ordersInHour.isEmpty() && h < 8) continue; // skip early morning hours with no data
+
+            // Real revenue: sum (itemPrice * quantity) for every item in every order in this hour
+            double revenue = 0.0;
+            for (Order o : ordersInHour) {
+                List<OrderItem> items = orderItemRepo.findByOrderOrderId(o.getOrderId());
+                for (OrderItem oi : items) {
+                    double price = oi.getItemPrice() == null ? 0.0 : oi.getItemPrice();
+                    int qty      = oi.getQuantity()  == null ? 1   : oi.getQuantity();
+                    revenue += price * qty;
+                }
+            }
 
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("hour", String.format("%02d:00", h));
             entry.put("orders", ordersInHour.size());
-            // Revenue would need order items lookup - approximate from count
-            entry.put("revenue", ordersInHour.size() > 0 ? ordersInHour.size() * 15.0 : 0); // placeholder
+            entry.put("revenue", Math.round(revenue * 100.0) / 100.0);
             hourly.add(entry);
         }
         return hourly;
@@ -100,20 +118,21 @@ public class AnalyticsController {
     @GetMapping("/items")
     public List<Map<String, Object>> getItemPerformance() {
         List<MenuItem> items = menuItemRepo.findAll();
-        double totalRevenue = items.stream().mapToDouble(MenuItem::getTotalRevenue).sum();
+        double totalRevenue = items.stream().mapToDouble(mi -> nz(mi.getTotalRevenue())).sum();
 
-        items.sort((a, b) -> Integer.compare(b.getItemsSold(), a.getItemsSold()));
+        items.sort((a, b) -> Integer.compare(nz(b.getItemsSold()), nz(a.getItemsSold())));
 
         return items.stream().map(mi -> {
+            double rev = nz(mi.getTotalRevenue());
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("itemId", mi.getItemId());
             m.put("name", mi.getName());
             m.put("category", mi.getCategory());
             m.put("price", mi.getPrice());
-            m.put("itemsSold", mi.getItemsSold());
-            m.put("totalRevenue", mi.getTotalRevenue());
+            m.put("itemsSold", nz(mi.getItemsSold()));
+            m.put("totalRevenue", rev);
             m.put("revenuePercent", totalRevenue > 0
-                    ? Math.round(mi.getTotalRevenue() / totalRevenue * 10000.0) / 100.0
+                    ? Math.round(rev / totalRevenue * 10000.0) / 100.0
                     : 0.0);
             return m;
         }).collect(Collectors.toList());

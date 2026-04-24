@@ -56,13 +56,35 @@ function findJava() {
 //  Backend lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Check if a backend is already running on the expected port (dev convenience).
+function isBackendAlreadyRunning() {
+    return new Promise(resolve => {
+        const req = http.get(`http://localhost:${PORT}/api/tables`, res => {
+            res.resume();
+            resolve(res.statusCode < 500);
+        });
+        req.on('error', () => resolve(false));
+        req.setTimeout(1500, () => { req.destroy(); resolve(false); });
+    });
+}
+
 function startBackend(javaExe) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
+        // Dev convenience: if a backend is already running (e.g. `./mvnw spring-boot:run`
+        // in another terminal), just use it instead of spawning our own.
+        if (!app.isPackaged && await isBackendAlreadyRunning()) {
+            console.log('[SwiftServe] Detected existing backend on port ' + PORT + ' — using it.');
+            resolve();
+            return;
+        }
+
         const jar = getJarPath();
         if (!fs.existsSync(jar)) {
             reject(new Error(
                 'Backend JAR not found:\n' + jar +
-                '\n\nBuild the project first with build.bat (Windows) or build.sh (Mac/Linux).'
+                '\n\nEither:\n' +
+                '  • Build the project first with build.bat (Windows) or build.sh (Mac/Linux), or\n' +
+                '  • Start the backend separately with `./mvnw spring-boot:run` in the backend/ folder.'
             ));
             return;
         }

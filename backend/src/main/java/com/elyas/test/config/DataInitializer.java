@@ -47,6 +47,7 @@ public class DataInitializer implements CommandLineRunner {
         seedMenuItems();
         seedTables();
         seedAnalyticsData();
+        seedActiveOrders();
         seedTimesheets();
         seedRefunds();
         migrateTableAssignments();
@@ -282,22 +283,29 @@ public class DataInitializer implements CommandLineRunner {
                     MenuItem mi = allItems.get(sd[0]);
                     mi.setItemsSold(sd[1]);
                     mi.setTotalRevenue(mi.getPrice() * sd[1]);
-                    menuRepo.save(mi);
+                    // Replace the detached reference with the managed one
+                    // save() returns — otherwise @Version on MenuItem will
+                    // flag the in-list copy as stale on the next save block.
+                    allItems.set(sd[0], menuRepo.save(mi));
                 }
             }
             System.out.println(">>> SwiftServe: seeded menu item sales stats");
         }
 
         // ── Set stock levels if not already set ──
+        // Reload fresh — the previous block may have bumped version numbers,
+        // and we need managed entities before another round of updates.
+        allItems = menuRepo.findAll();
         boolean noStock = allItems.stream().allMatch(mi -> mi.getStock() == null);
         if (noStock) {
-            for (MenuItem mi : allItems) {
+            for (int i = 0; i < allItems.size(); i++) {
+                MenuItem mi = allItems.get(i);
                 if ("Appetizer".equals(mi.getCategory())) { mi.setStock(25); }
                 else if ("Entree".equals(mi.getCategory())) { mi.setStock(15); }
                 else if ("Beverage".equals(mi.getCategory())) { mi.setStock(50); }
                 else if ("Side".equals(mi.getCategory())) { mi.setStock(30); }
                 else { mi.setStock(20); }
-                menuRepo.save(mi);
+                allItems.set(i, menuRepo.save(mi));
             }
             System.out.println(">>> SwiftServe: seeded stock levels");
         }
@@ -318,6 +326,96 @@ public class DataInitializer implements CommandLineRunner {
         tableRepo.findById("E1").ifPresent(t -> {
             if ("CLEAN".equals(t.getStatus())) { t.setStatus("DIRTY"); tableRepo.save(t); }
         });
+    }
+
+    /**
+     * Seed a small set of active (PENDING / IN_QUEUE / READY) orders so the
+     * kitchen queue, waiter "Active Orders" list, and manager dashboard
+     * aren't empty on a fresh database. Only runs if zero active orders
+     * currently exist so it's safe to restart the backend.
+     */
+    private void seedActiveOrders() {
+        long activeCount = orderRepo.findByStatusIn(
+                List.of("PENDING", "IN_QUEUE", "READY")).size();
+        if (activeCount > 0) return;
+
+        List<MenuItem> allItems = menuRepo.findAll();
+        if (allItems.isEmpty()) return;
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // Spec: waiterId, tableId, status, minutesAgo (when the order was placed)
+        Object[][] orders = {
+            // IN_QUEUE — waiting on the kitchen
+            { "WTR001", "A2", "IN_QUEUE", 12 },
+            { "WTR002", "B4", "IN_QUEUE",  7 },
+            { "WTR003", "C1", "IN_QUEUE",  3 },
+            // READY — kitchen is done, waiter needs to run it
+            { "WTR001", "A5", "READY",    20 },
+            { "WTR004", "D3", "READY",    17 },
+            // PENDING — being built in the waiter terminal, not yet submitted
+            { "WTR005", "E2", "PENDING",   2 },
+        };
+
+        int created = 0;
+        for (Object[] row : orders) {
+            String waiter = (String) row[0];
+            String table  = (String) row[1];
+            String status = (String) row[2];
+            int minutesAgo = (int) row[3];
+
+            LocalDateTime createdAt = now.minusMinutes(minutesAgo);
+            Order order = new Order();
+            order.setTableId(table);
+            order.setWaiterId(waiter);
+            order.setStatus(status);
+            order.setCreatedAt(createdAt);
+            if (!"PENDING".equals(status)) {
+                order.setSubmittedAt(createdAt.plusMinutes(1));
+            }
+            if ("READY".equals(status)) {
+                order.setReadyAt(createdAt.plusMinutes(Math.max(1, minutesAgo - 2)));
+            }
+            orderRepo.save(order);
+            created++;
+
+            // Give each order 2 or 3 line items across a couple of seats.
+            int itemCount = 2 + (created % 2);
+            for (int j = 0; j < itemCount; j++) {
+                MenuItem mi = allItems.get((created * 5 + j) % allItems.size());
+                OrderItem oi = new OrderItem();
+                oi.setOrder(order);
+                oi.setItemId(mi.getItemId());
+                oi.setItemName(mi.getName());
+                oi.setSeatId((j % 4) + 1);
+                oi.setQuantity(1);
+                oi.setItemPrice(mi.getPrice());
+                orderItemRepo.save(oi);
+
+                // Match the new API contract: stock is reserved at
+                // order time. Keeps seeded stock counts consistent
+                // with what a real order flow would produce.
+                // Refetch by id so @Version on MenuItem sees a managed
+                // entity — the cached `allItems` reference can go stale
+                // if the same item gets hit across outer iterations.
+                menuRepo.findById(mi.getItemId()).ifPresent(fresh -> {
+                    if (fresh.getStock() != null) {
+                        fresh.setStock(Math.max(0, fresh.getStock() - 1));
+                        menuRepo.save(fresh);
+                    }
+                });
+            }
+
+            // Mark the table OCCUPIED so the floor map reflects the order.
+            tableRepo.findById(table).ifPresent(t -> {
+                if ("CLEAN".equals(t.getStatus())) {
+                    t.setStatus("OCCUPIED");
+                    tableRepo.save(t);
+                }
+            });
+        }
+
+        System.out.println(">>> SwiftServe: seeded " + created + " active orders (PENDING/IN_QUEUE/READY)");
     }
 
     private void seedTimesheets() {

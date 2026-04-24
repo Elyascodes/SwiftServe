@@ -39,6 +39,7 @@ const api = {
     submitOrder(orderId)             { return this.put(`/api/orders/${orderId}/submit`); },
     markOrderReady(orderId)          { return this.put(`/api/orders/${orderId}/ready`); },
     completeOrder(orderId, payment)  { return this.put(`/api/orders/${orderId}/complete`, { paymentMethod: payment || 'card' }); },
+    cancelOrder(orderId)             { return this.del(`/api/orders/${orderId}`); },
     getKitchenQueue()                { return this.get('/api/orders/queue'); },
     getOrdersForTable(tableId)       { return this.get(`/api/orders/table/${tableId}`); },
     getOrder(orderId)                { return this.get(`/api/orders/${orderId}`); },
@@ -63,6 +64,8 @@ const api = {
     clockOut(userId)                 { return this.post('/api/timesheets/clock-out', { userId }); },
     getClockStatus(userId)           { return this.get(`/api/timesheets/status/${userId}`); },
     getTimesheets(userId)            { return this.get(`/api/timesheets/${userId}`); },
+    updateTimesheet(id, data)        { return this.put(`/api/timesheets/${id}`, data); },
+    deleteTimesheet(id)              { return this.del(`/api/timesheets/${id}`); },
 
     // Analytics
     getEarnings(period)              { return this.get(`/api/analytics/earnings?period=${period || 'day'}`); },
@@ -74,6 +77,7 @@ const api = {
 
     // Refunds
     createRefund(data)               { return this.post('/api/refunds', data); },
+    getAllRefunds()                  { return this.get('/api/refunds'); },
     getPendingRefunds()              { return this.get('/api/refunds/pending'); },
     approveRefund(id, managerId)     { return this.put(`/api/refunds/${id}/approve`, { managerId }); },
     rejectRefund(id, managerId, rejectionReason) { return this.put(`/api/refunds/${id}/reject`, { managerId, rejectionReason }); },
