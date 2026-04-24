@@ -1,136 +1,158 @@
-(function() {
-    const content = document.getElementById('mainContent');
-    let selectedTable = null;
+/* ============================================================
+   Bus Boy page — Floor map → Table Status Change
+   ============================================================ */
+(function () {
+    const root = document.getElementById('app');
+    let pollTimer = null;
+    let selectedTableId = null;
 
-    content.innerHTML = `
-        <div class="split-layout map-left">
-            <div>
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">Table Cleanup</h2>
-                        <div style="display:flex;align-items:center;gap:12px">
-                            <span id="dirtyCount" style="font-size:0.8rem;color:var(--text-secondary)"></span>
-                            <button class="btn btn-secondary btn-small" onclick="busboyRefresh()">Refresh</button>
-                        </div>
-                    </div>
-                    <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:16px">
-                        Select a <span style="color:var(--dirty);font-weight:700">red</span> table to see actions.
-                    </p>
-                    <div id="busboyFloorMap"></div>
-                </div>
-            </div>
-
-            <div>
-                <div class="card" id="busboyPanel">
-                    <div class="card-header">
-                        <h2 class="card-title">Table Actions</h2>
-                    </div>
-                    <div id="busboyPanelContent">
-                        <p style="color:var(--text-secondary);font-size:0.85rem">
-                            Select a table on the floor map to see available actions.
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-
-    createFloorMap('busboyFloorMap', onTableClick);
-    refreshAndCount();
-
-    setInterval(refreshAndCount, 5000);
-
-    async function refreshAndCount() {
-        try {
-            const tables = await api.getTables();
-            updateFloorMap('busboyFloorMap', tables);
-            const dirtyCount = tables.filter(t => t.status === 'DIRTY').length;
-            document.getElementById('dirtyCount').textContent =
-                dirtyCount + ' dirty table' + (dirtyCount !== 1 ? 's' : '');
-
-            // Refresh panel if a table is selected
-            if (selectedTable) {
-                const current = tables.find(t => t.tableId === selectedTable);
-                if (current) renderPanel(current.tableId, current.status);
-            }
-        } catch (e) {
-            console.error('Failed to refresh:', e);
-        }
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    function onTableClick(tableId, cell) {
-        // Deselect previous highlight
-        document.querySelectorAll('.floor-cell.selected-table').forEach(c => {
-            c.classList.remove('selected-table');
-        });
-
-        selectedTable = tableId;
-        cell.classList.add('selected-table');
-
-        const status = cell.classList.contains('dirty')    ? 'DIRTY'
-                     : cell.classList.contains('occupied') ? 'OCCUPIED'
-                     : 'CLEAN';
-
-        renderPanel(tableId, status);
+    function stopPolling() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     }
 
-    function renderPanel(tableId, status) {
-        const panel = document.getElementById('busboyPanelContent');
-
-        const statusColor = status === 'DIRTY' ? 'var(--dirty)'
-                          : status === 'OCCUPIED' ? 'var(--occupied)'
-                          : 'var(--clean)';
-
-        let actionsHtml = '';
-        if (status === 'DIRTY') {
-            actionsHtml = `
-                <button class="btn btn-success" style="width:100%;padding:14px;font-size:0.95rem;margin-bottom:10px"
-                    onclick="busboyMarkClean('${tableId}')">
-                    ✓ Mark as Clean
-                </button>
-            `;
-        } else if (status === 'OCCUPIED') {
-            actionsHtml = `
-                <p style="color:var(--warning);font-size:0.85rem;margin-top:8px">
-                    This table is currently occupied by a customer.
-                </p>
-            `;
-        } else {
-            actionsHtml = `
-                <p style="color:var(--success);font-size:0.85rem;margin-top:8px">
-                    This table is already clean — no action needed.
-                </p>
-            `;
-        }
-
-        panel.innerHTML = `
-            <div style="text-align:center;margin-bottom:24px">
-                <div style="font-size:3rem;font-weight:800;color:${statusColor}">${tableId}</div>
-                <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;
-                            letter-spacing:1px;color:${statusColor};margin-top:4px">${status}</div>
+    // ── Welcome hub ──
+    async function renderWelcome() {
+        stopPolling();
+        const clockedIn = await refreshClockStatus();
+        const clockLabel = clockedIn ? 'Clock out' : 'Clock in';
+        root.innerHTML = `
+          <div class="top-banner">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <div></div>
+              <div></div>
+              <button class="btn-signout" onclick="logout()">Sign Out</button>
             </div>
-            ${actionsHtml}
+            <div class="banner-title">Welcome<br><small>*${esc(employee.name)}*</small></div>
+          </div>
+          <div class="welcome-hub">
+            <div></div><div class="mid"></div><div></div>
+            <div class="welcome-buttons">
+              <div class="welcome-grid">
+                <button class="btn-welcome" onclick="bbHandleClock()">${clockLabel}</button>
+                <button class="btn-welcome" onclick="bbRender('map')">Floor Map</button>
+                <button class="btn-welcome" onclick="bbRender('timesheet')">Time Sheet</button>
+              </div>
+            </div>
+          </div>
         `;
     }
 
-    window.busboyMarkClean = async function(tableId) {
-        try {
-            await api.updateTableStatus(tableId, 'CLEAN');
-            showToast('Table ' + tableId + ' marked clean!', 'success');
-            selectedTable = null;
-            document.querySelectorAll('.floor-cell.selected-table').forEach(c => {
-                c.classList.remove('selected-table');
-            });
-            document.getElementById('busboyPanelContent').innerHTML = `
-                <p style="color:var(--text-secondary);font-size:0.85rem">
-                    Select a table on the floor map to see available actions.
-                </p>
-            `;
-            refreshAndCount();
-        } catch (e) {
-            showToast(e.message, 'error');
-        }
+    window.bbHandleClock = async function () {
+        await toggleClock();
+        renderWelcome();
     };
 
-    window.busboyRefresh = refreshAndCount;
+    // ── Main floor-map view ──
+    async function renderMap() {
+        stopPolling();
+        root.innerHTML = `
+          <div class="top-banner">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <button class="btn-back" onclick="bbRender('welcome')">back</button>
+              <div></div>
+              <button class="banner-signout-text" onclick="logout()">Sign Out</button>
+            </div>
+            <div class="banner-title">Hello<br><small>*${esc(employee.name)}*</small></div>
+          </div>
+          <div class="framed">
+            <div class="frame-inner">
+              <div id="bbMap"></div>
+            </div>
+          </div>
+        `;
+        await loadMap();
+        pollTimer = setInterval(loadMap, 4000);
+    }
+
+    function renderTimesheet() {
+        stopPolling();
+        mytimesheet.render({
+            root,
+            backLabel: 'back',
+            onBack: () => bbRender('welcome'),
+            title: 'My Timesheet',
+        });
+    }
+
+    window.bbRender = function (v) {
+        if (v === 'welcome') renderWelcome();
+        else if (v === 'map') renderMap();
+        else if (v === 'timesheet') renderTimesheet();
+    };
+
+    async function loadMap() {
+        try {
+            const tables = await api.getTables();
+            const byId = {};
+            tables.forEach(t => { byId[t.tableId] = t; });
+            document.getElementById('bbMap').innerHTML = buildFloorMap(byId, (id) => `onclick="bbTap('${id}')"`);
+        } catch (e) { console.error(e); }
+    }
+
+    window.bbTap = function (id) {
+        // Only allow editing DIRTY tables
+        // We need to check status — but easiest: let the handler check and show status change view if dirty
+        selectedTableId = id;
+        renderChange(id);
+    };
+
+    // ── Table Status Change view ──
+    async function renderChange(id) {
+        stopPolling();
+        try {
+            const tables = await api.getTables();
+            const byId = {};
+            tables.forEach(t => { byId[t.tableId] = t; });
+            const t = byId[id];
+            if (!t || t.status !== 'DIRTY') {
+                showToast('Only dirty tables can be cleaned', 'error');
+                return renderMap();
+            }
+            root.innerHTML = `
+              <div class="top-banner">
+                <div></div><div class="mid"></div><div></div>
+                <div class="banner-content">
+                  <button class="btn-back" onclick="bbBack()">back</button>
+                  <div></div>
+                  <button class="banner-signout-text" onclick="logout()">Sign Out</button>
+                </div>
+                <div class="banner-title">Table Status<br><small>Change</small></div>
+              </div>
+              <div class="framed">
+                <div class="frame-inner" style="background:#1a1a2e">
+                  <div style="display:flex; gap:32px; align-items:flex-start; justify-content:center; padding-top:20px">
+                    <div style="background:#1a1a2e; padding:12px">
+                      ${buildFloorMap(byId, (tId) => tId === id ? 'style="outline:3px solid #fff;outline-offset:2px"' : '', true)}
+                    </div>
+                    <div style="background:#23233a; color:#fff; border-radius:12px; padding:22px; min-width:200px">
+                      <div style="font-weight:700; margin-bottom:14px; text-align:center">Table status</div>
+                      <button class="w-full" style="background:#3CC573;color:#fff;padding:10px 16px;border-radius:8px;border:none;font-weight:700;cursor:pointer;margin-bottom:8px" onclick="bbMarkClean('${id}')">Available</button>
+                      <div style="background:#F5D547; color:#5A4A00; padding:10px 16px; border-radius:8px; font-weight:700; text-align:center; margin-bottom:8px; opacity:0.85">Selected</div>
+                      <div style="background:#F25A50; color:#fff; padding:10px 16px; border-radius:8px; font-weight:700; text-align:center">Dirty</div>
+                      <div style="margin-top:22px; text-align:center; font-size:2rem; font-weight:900; letter-spacing:2px">${esc(id)}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    window.bbBack = renderMap;
+    window.bbMarkClean = async function (id) {
+        try {
+            await api.updateTableStatus(id, 'CLEAN');
+            showToast('Table ' + id + ' marked clean', 'success');
+            renderMap();
+        } catch (e) { showToast(e.message, 'error'); }
+    };
+
+    renderWelcome();
 })();

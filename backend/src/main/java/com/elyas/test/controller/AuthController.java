@@ -53,6 +53,15 @@ public class AuthController {
         }
 
         User emp = found.get();
+
+        // Deactivated employees must not be able to log in even with the right
+        // password. Managers toggle isActive=false instead of deleting, so the
+        // row still exists and BCrypt still matches — this is the only gate.
+        if (emp.getIsActive() != null && !emp.getIsActive()) {
+            return ResponseEntity.status(401)
+                    .body(Map.of("message", "This account has been deactivated. Contact your manager."));
+        }
+
         Map<String, Object> response = new java.util.LinkedHashMap<>();
         response.put("employeeId", emp.getEmployeeId());
         response.put("name", emp.getName());

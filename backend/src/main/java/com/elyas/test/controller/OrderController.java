@@ -66,15 +66,61 @@ public class OrderController {
         }
 
         Order order = found.get();
+
+        // An order stops being editable once it's been submitted to the
+        // kitchen — otherwise a late addItems() call would deduct stock
+        // for food the kitchen never saw (or, worse, on a COMPLETE order,
+        // silently consume inventory with no corresponding revenue).
+        if (!"PENDING".equalsIgnoreCase(order.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "Cannot add items — order is already "
+                            + order.getStatus().toLowerCase() + "."));
+        }
+
+        // Pre-flight check: the lines in this request might ask for more of
+        // the same item across multiple seats. Aggregate the requested qty
+        // per item so we compare against stock in one shot and reject the
+        // whole batch atomically if anything is short.
+        Map<Long, Integer> requestedQty = new LinkedHashMap<>();
+        for (Map<String, Object> itemData : items) {
+            if (itemData.get("itemId") == null) continue;
+            Long itemId = ((Number) itemData.get("itemId")).longValue();
+            Integer qty = itemData.containsKey("quantity")
+                    ? ((Number) itemData.get("quantity")).intValue() : 1;
+            requestedQty.merge(itemId, qty, Integer::sum);
+        }
+
+        // Validate availability + stock BEFORE mutating anything.
+        for (Map.Entry<Long, Integer> e : requestedQty.entrySet()) {
+            Optional<MenuItem> found2 = menuItemRepo.findById(e.getKey());
+            if (found2.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("message", "Menu item " + e.getKey() + " no longer exists."));
+            }
+            MenuItem mi = found2.get();
+            if (Boolean.FALSE.equals(mi.getIsActive())) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("message", mi.getName() + " is unavailable."));
+            }
+            if (mi.getStock() != null && mi.getStock() < e.getValue()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("message",
+                                "Not enough stock for " + mi.getName()
+                                + " (have " + mi.getStock() + ", need " + e.getValue() + ")."));
+            }
+        }
+
+        // All good — persist order lines AND decrement stock in the same pass.
+        // Stock is deducted at order time (not at mark-ready) so the next
+        // waiter can't sell the same last unit twice.
         for (Map<String, Object> itemData : items) {
             Long itemId   = ((Number) itemData.get("itemId")).longValue();
             Integer seatId = ((Number) itemData.get("seatId")).intValue();
             Integer qty    = itemData.containsKey("quantity") ? ((Number) itemData.get("quantity")).intValue() : 1;
 
-            Optional<MenuItem> menuItem = menuItemRepo.findById(itemId);
-            if (menuItem.isEmpty()) continue;
+            MenuItem mi = menuItemRepo.findById(itemId).orElse(null);
+            if (mi == null) continue;
 
-            MenuItem mi = menuItem.get();
             OrderItem oi = new OrderItem();
             oi.setOrder(order);
             oi.setItemId(itemId);
@@ -83,6 +129,11 @@ public class OrderController {
             oi.setQuantity(qty);
             oi.setItemPrice(mi.getPrice());
             orderItemRepo.save(oi);
+
+            if (mi.getStock() != null) {
+                mi.setStock(Math.max(0, mi.getStock() - qty));
+                menuItemRepo.save(mi);
+            }
         }
 
         return ResponseEntity.ok(buildOrderResponse(orderRepo.findById(id).get()));
@@ -111,16 +162,9 @@ public class OrderController {
         order.setReadyAt(LocalDateTime.now());
         orderRepo.save(order);
 
-        // Deduct stock for each item in the order
-        List<OrderItem> items = orderItemRepo.findByOrderOrderId(id);
-        for (OrderItem oi : items) {
-            menuItemRepo.findById(oi.getItemId()).ifPresent(mi -> {
-                if (mi.getStock() != null) {
-                    mi.setStock(Math.max(0, mi.getStock() - oi.getQuantity()));
-                    menuItemRepo.save(mi);
-                }
-            });
-        }
+        // Stock is already decremented at order-add time (see addItems),
+        // so mark-ready is now a pure status transition that the waiter
+        // can immediately act on to take payment.
 
         return ResponseEntity.ok(buildOrderResponse(order));
     }
@@ -132,6 +176,23 @@ public class OrderController {
         if (found.isEmpty()) return ResponseEntity.notFound().build();
 
         Order order = found.get();
+
+        // Idempotency: double-clicking Pay Cash → Pay Card (or any rapid
+        // duplicate submit) must not re-credit earnings and item stats.
+        if ("COMPLETE".equalsIgnoreCase(order.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "Order has already been paid."));
+        }
+
+        // The workflow is: PENDING → IN_QUEUE → READY → COMPLETE.
+        // Completing before the kitchen has marked it READY skips the
+        // cook workflow and records earnings for food that was never made.
+        if (!"READY".equalsIgnoreCase(order.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "Order is not ready for payment yet (current status: "
+                            + order.getStatus() + ")."));
+        }
+
         order.setStatus("COMPLETE");
         order.setCompletedAt(LocalDateTime.now());
         orderRepo.save(order);
@@ -167,6 +228,55 @@ public class OrderController {
         earningsRepo.save(earnings);
 
         return ResponseEntity.ok(buildOrderResponse(order));
+    }
+
+    /**
+     * Cancel an in-progress order. Only PENDING orders can be deleted —
+     * once the kitchen is working on it, cancellation would mean losing
+     * prep work. This endpoint exists so the frontend can roll back the
+     * table-OCCUPIED state when a waiter abandons an order mid-flow
+     * (e.g. closes the app after tapping a table but before submitting).
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> cancelOrder(@PathVariable Long id) {
+        Optional<Order> found = orderRepo.findById(id);
+        if (found.isEmpty()) return ResponseEntity.notFound().build();
+
+        Order order = found.get();
+        if (!"PENDING".equalsIgnoreCase(order.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "Only pending orders can be cancelled. Current status: "
+                            + order.getStatus()));
+        }
+
+        // Restore stock for any items already added — we deducted at
+        // addItems time, so cancellation must give it back.
+        List<OrderItem> orderItems = orderItemRepo.findByOrderOrderId(id);
+        for (OrderItem oi : orderItems) {
+            menuItemRepo.findById(oi.getItemId()).ifPresent(mi -> {
+                if (mi.getStock() != null) {
+                    mi.setStock(mi.getStock() + oi.getQuantity());
+                    menuItemRepo.save(mi);
+                }
+            });
+        }
+
+        // Remove the order rows (cascade via Order.items mappedBy).
+        orderRepo.delete(order);
+
+        // If this was the last active order on the table, return it to CLEAN.
+        // createOrder flipped it to OCCUPIED, so we need to undo that too.
+        String tableId = order.getTableId();
+        List<Order> remaining = orderRepo.findByTableIdAndStatusNot(tableId, "COMPLETE");
+        if (remaining.isEmpty()) {
+            tableRepo.findById(tableId).ifPresent(t -> {
+                t.setStatus("CLEAN");
+                tableRepo.save(t);
+            });
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Order " + id + " cancelled and table " + tableId + " released."));
     }
 
     @GetMapping("/queue")

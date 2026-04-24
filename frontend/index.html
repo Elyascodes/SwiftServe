@@ -3,260 +3,254 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SwiftServe – Staff Sign In</title>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;700&display=swap"
-    rel="stylesheet"
-  />
+  <title>SwiftServe — Sign In</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Permanent+Marker&family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles/app.css" />
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { overflow: hidden; }
 
-    body {
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #12122a;
-      font-family: 'Inter', sans-serif;
+    .stage-login {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        grid-template-columns: 45% 9% 46%;
+    }
+    .stage-login .band-coral { background: var(--coral); }
+    .stage-login .band-mid   { background: var(--coral-dark); }
+    .stage-login .band-navy  { background: var(--navy); }
+
+    .brand-block {
+        position: absolute;
+        left: 0;
+        width: 45%;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        z-index: 2;
+    }
+    .brand-block .logo {
+        font-family: 'Press Start 2P', monospace;
+        font-size: 2.3rem;
+        color: var(--navy);
+        letter-spacing: 3px;
+        line-height: 1.4;
+    }
+    .brand-block .sub {
+        font-weight: 800;
+        font-size: 0.85rem;
+        letter-spacing: 5px;
+        color: var(--navy);
     }
 
-    .card {
-      display: flex;
-      width: 780px;
-      min-height: 440px;
-      border-radius: 18px;
-      overflow: hidden;
-      box-shadow: 0 24px 64px rgba(0,0,0,0.55);
+    .signin-card {
+        position: absolute;
+        right: 6%;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 480px;
+        background: #fff;
+        border-radius: 16px;
+        padding: 40px 44px;
+        box-shadow: 0 14px 42px rgba(0,0,0,0.3);
+        z-index: 3;
     }
-
-    /* ── Left branding panel ── */
-    .brand-panel {
-      width: 42%;
-      background: #f25a50;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 18px;
-      padding: 40px 24px;
-      position: relative;
+    .signin-card h1 {
+        font-size: 1.7rem;
+        font-weight: 900;
+        letter-spacing: 1.5px;
+        color: var(--navy);
+        margin-bottom: 26px;
     }
-
-    /* subtle darker strip behind the brand text */
-    .brand-panel::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(0,0,0,0.08) 0%, transparent 60%);
-      pointer-events: none;
+    .signin-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
     }
-
-    .brand-logo {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 1.35rem;
-      color: #12122a;
-      line-height: 1.7;
-      text-align: center;
-      letter-spacing: 1px;
-      z-index: 1;
+    .signin-input-wrap {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: #D9D9DE;
+        border-radius: 8px;
+        padding: 15px 18px;
     }
-
-    .brand-sub {
-      font-family: 'Inter', sans-serif;
-      font-weight: 700;
-      font-size: 0.85rem;
-      letter-spacing: 4px;
-      color: #12122a;
-      z-index: 1;
+    .signin-input-wrap .ico { font-size: 1rem; opacity: 0.8; flex-shrink: 0; }
+    .signin-input-wrap input {
+        border: none;
+        background: transparent;
+        outline: none;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.88rem;
+        font-weight: 700;
+        letter-spacing: 2px;
+        color: #333;
+        width: 100%;
+        text-transform: uppercase;
     }
-
-    /* ── Right form panel ── */
-    .form-panel {
-      flex: 1;
-      background: #ffffff;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: 48px 44px;
-      gap: 28px;
+    .signin-input-wrap input::placeholder {
+        color: #767682;
+        font-weight: 700;
+        letter-spacing: 2px;
     }
-
-    .form-panel h1 {
-      font-size: 1.65rem;
-      font-weight: 700;
-      color: #12122a;
-      letter-spacing: 1px;
+    .signin-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        margin-top: 22px;
     }
-
-    .fields {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .input-wrap {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      background: #e8e8e8;
-      border-radius: 10px;
-      padding: 14px 18px;
-    }
-
-    .input-wrap .icon {
-      font-size: 1.1rem;
-      flex-shrink: 0;
-    }
-
-    .input-wrap input {
-      border: none;
-      background: transparent;
-      outline: none;
-      font-family: 'Inter', sans-serif;
-      font-size: 0.9rem;
-      font-weight: 600;
-      letter-spacing: 2px;
-      color: #444;
-      width: 100%;
-    }
-
-    .input-wrap input::placeholder {
-      color: #888;
-      font-weight: 600;
-      letter-spacing: 2px;
-    }
-
-    .actions {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 14px;
-      margin-top: 4px;
-    }
-
     .btn-signin {
-      width: 100%;
-      padding: 15px;
-      border: none;
-      border-radius: 50px;
-      background: #f25a50;
-      color: #fff;
-      font-family: 'Inter', sans-serif;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
+        background: var(--coral);
+        color: #fff;
+        padding: 13px 44px;
+        border-radius: 999px;
+        font-size: 1.05rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: filter 0.15s, transform 0.1s;
+        min-width: 180px;
     }
-
-    .btn-signin:hover  { background: #d94840; }
-    .btn-signin:active { transform: scale(0.98); }
-
+    .btn-signin:hover  { filter: brightness(1.08); }
+    .btn-signin:active { transform: scale(0.97); }
     .btn-forgot {
-      width: 100%;
-      padding: 13px;
-      border: none;
-      border-radius: 50px;
-      background: #12122a;
-      color: #fff;
-      font-family: 'Inter', sans-serif;
-      font-size: 0.78rem;
-      font-weight: 700;
-      letter-spacing: 2px;
-      cursor: pointer;
-      transition: background 0.2s;
+        background: var(--navy);
+        color: #fff;
+        padding: 11px 34px;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 2.5px;
+        border: none;
+        cursor: pointer;
+        transition: filter 0.15s;
     }
+    .btn-forgot:hover { filter: brightness(1.3); }
 
-    .btn-forgot:hover { background: #2a2a4a; }
-
-    /* error message */
     .error-msg {
-      color: #d94840;
-      font-size: 0.8rem;
-      font-weight: 600;
-      min-height: 18px;
-      text-align: center;
+        color: #D94840;
+        font-size: 0.82rem;
+        font-weight: 600;
+        min-height: 18px;
+        margin-top: 10px;
+        text-align: center;
     }
+
+    .info-block {
+        position: absolute;
+        left: 0;
+        width: 45%;
+        bottom: 18px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        color: var(--navy);
+        z-index: 2;
+        padding: 0 16px;
+    }
+    .info-block h3 {
+        font-family: 'Permanent Marker', cursive;
+        font-size: 1.15rem;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+    }
+    .info-block .info-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 6px 16px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+    .info-block .hours-grid {
+        display: grid;
+        grid-template-columns: repeat(2, auto);
+        gap: 2px 18px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        margin-top: 4px;
+        opacity: 0.9;
+    }
+    .info-block .hours-grid span:nth-child(odd) { font-weight: 800; }
   </style>
 </head>
 <body>
 
-<div class="card">
-  <!-- Left -->
-  <div class="brand-panel">
-    <div class="brand-logo">SWIFT<br>SERVE</div>
-    <div class="brand-sub">BY SWIFTX</div>
+<div class="stage-login">
+  <div class="band-coral"></div>
+  <div class="band-mid"></div>
+  <div class="band-navy"></div>
+</div>
+
+<div class="brand-block">
+  <div class="logo">SWIFT<br>SERVE</div>
+  <div class="sub">BY SWIFTX</div>
+</div>
+
+<div class="info-block">
+  <h3>J's Corner Restaurant</h3>
+  <div class="info-row">
+    <span>680 Arntson Dr., Marietta, GA 30060</span>
+    <span>(470) 555-1212</span>
+    <span>jscorner.com</span>
+  </div>
+  <div class="hours-grid">
+    <span>Mon - Thu</span><span>11:00 AM – 9:30 PM</span>
+    <span>Wed</span><span>11:30 AM – 9:30 PM</span>
+    <span>Fri - Sat</span><span>11:00 AM – 9:30 PM</span>
+    <span>Sun</span><span>Closed</span>
+  </div>
+</div>
+
+<div class="signin-card">
+  <h1>STAFF SIGN IN</h1>
+
+  <div class="signin-fields">
+    <div class="signin-input-wrap">
+      <span class="ico">&#128100;</span>
+      <input id="empId" type="text" placeholder="EMPLOYEE ID" maxlength="6" autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="signin-input-wrap">
+      <span class="ico">&#128274;</span>
+      <input id="password" type="password" placeholder="PASSWORD" autocomplete="off" />
+    </div>
   </div>
 
-  <!-- Right -->
-  <div class="form-panel">
-    <h1>STAFF SIGN IN</h1>
+  <p class="error-msg" id="errorMsg"></p>
 
-    <div class="fields">
-      <div class="input-wrap">
-        <span class="icon">&#128100;</span>
-        <input
-          id="empId"
-          type="text"
-          placeholder="EMPLOYEE ID"
-          maxlength="6"
-          autocomplete="off"
-          spellcheck="false"
-        />
-      </div>
-
-      <div class="input-wrap">
-        <span class="icon">&#128274;</span>
-        <input
-          id="password"
-          type="password"
-          placeholder="PASSWORD"
-          autocomplete="off"
-        />
-      </div>
-    </div>
-
-    <p class="error-msg" id="errorMsg"></p>
-
-    <div class="actions">
-      <button class="btn-signin" onclick="handleSignIn()">Sign In</button>
-      <button class="btn-forgot" onclick="handleForgot()">FORGOT ID/PASS</button>
-    </div>
+  <div class="signin-actions">
+    <button class="btn-signin" onclick="handleSignIn()">Sign In</button>
+    <button class="btn-forgot" onclick="handleForgot()">FORGOT ID/PASS</button>
   </div>
 </div>
 
 <script>
-  // If already logged in, go straight to the app
   if (sessionStorage.getItem('employee')) {
     window.location.href = 'app.html';
   }
-
-  const BANNED_PASSWORDS = ['1111', '123456', '000000', '111111', '123123', '654321'];
 
   async function handleSignIn() {
     const empId    = document.getElementById('empId').value.trim().toUpperCase();
     const password = document.getElementById('password').value;
     const errEl    = document.getElementById('errorMsg');
     const btn      = document.querySelector('.btn-signin');
-
     errEl.textContent = '';
+    errEl.style.color = '';
 
-    // ── Client-side checks (mirrors backend rules) ──
     if (!/^[A-Za-z0-9]{6}$/.test(empId)) {
-      errEl.textContent = 'Employee ID must be exactly 6 alphanumeric characters.';
+      errEl.textContent = 'Employee ID must be exactly 6 characters.';
       return;
     }
-
     if (password.length < 4) {
       errEl.textContent = 'Password is too short.';
       return;
     }
 
-    if (BANNED_PASSWORDS.includes(password)) {
-      errEl.textContent = 'Password is not allowed.';
-      return;
-    }
-
-    // ── Send to backend ──
     btn.disabled = true;
     btn.textContent = 'Signing in…';
 
@@ -266,9 +260,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeId: empId, password })
       });
-
       const data = await res.json();
-
       if (res.ok) {
         sessionStorage.setItem('employee', JSON.stringify(data));
         window.location.href = 'app.html';
@@ -284,11 +276,13 @@
   }
 
   function handleForgot() {
-    // TODO: implement forgot ID/password flow
-    alert('Please contact your manager to reset your credentials.');
+    const errEl = document.getElementById('errorMsg');
+    errEl.style.color = '#12122a';
+    errEl.textContent = 'Please contact your manager to reset your credentials.';
+    // Restore default error color next time handleSignIn clears the message
+    setTimeout(() => { errEl.style.color = ''; }, 8000);
   }
 
-  // Allow Enter key to submit
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleSignIn();
   });

@@ -1,346 +1,611 @@
-(function() {
-    const content = document.getElementById('mainContent');
-    let selectedTable = null;
-    let currentOrder = null;
-    let menuItems = [];
-    let selectedCategory = null;
-    let selectedSeat = 1;
-    let orderItems = []; // items added to current order
+/* ============================================================
+   Waiter — Welcome → Tables / Orders (Active / Menu / Add items)
+   ============================================================ */
+(function () {
+    const root = document.getElementById('app');
+    let pollTimer = null;
+    let addFlow = { tableId: null, items: [] };
+    // Lookup for current menu items (avoids HTML-escape issues when passing
+    // names through onclick attributes — entities like &#39; are decoded by
+    // the HTML parser BEFORE the JS is evaluated, which breaks string
+    // literals containing apostrophes. We pass only the numeric id and
+    // look up the record here.)
+    let menuById = {};
 
-    content.innerHTML = `
-        <div class="split-layout map-left">
-            <div>
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">Floor Map</h2>
-                        <span id="selectedTableBadge" style="font-size:0.8rem;color:var(--text-secondary)">Select a table</span>
-                    </div>
-                    <div id="waiterFloorMap"></div>
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+    function assigned() {
+        return (employee.assignedTables || '')
+            .split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    // Inline confirm modal — works in Electron where native confirm() can be
+    // disabled. Returns a Promise<boolean>.
+    function confirmModal(message) {
+        return new Promise(resolve => {
+            const wrap = document.createElement('div');
+            wrap.className = 'modal-backdrop';
+            wrap.innerHTML = `
+              <div class="modal-card" style="max-width:380px">
+                <div style="font-size:1rem; font-weight:700; margin-bottom:16px; white-space:pre-line">${esc(message)}</div>
+                <div style="display:flex; gap:10px; justify-content:flex-end">
+                  <button class="pill pill-navy pill-sm" data-ans="0">Cancel</button>
+                  <button class="pill pill-coral pill-sm" data-ans="1">Confirm</button>
                 </div>
+              </div>`;
+            wrap.addEventListener('click', e => {
+                const b = e.target.closest('button[data-ans]');
+                if (!b) return;
+                wrap.remove();
+                resolve(b.getAttribute('data-ans') === '1');
+            });
+            document.body.appendChild(wrap);
+        });
+    }
+
+    // ── Welcome hub ──
+    async function renderWelcome() {
+        stopPolling();
+        const clockedIn = await refreshClockStatus();
+        const clockLabel = clockedIn ? 'Clock out' : 'Clock in';
+
+        root.innerHTML = `
+          <div class="top-banner">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <div></div>
+              <div></div>
+              <button class="btn-signout" onclick="logout()">Sign Out</button>
             </div>
-            <div class="order-sidebar" id="orderPanel">
-                <div class="card" id="orderCard">
-                    <div class="card-header">
-                        <h2 class="card-title" id="orderTitle">Select a Table</h2>
-                    </div>
-                    <div id="orderContent">
-                        <p style="color:var(--text-secondary);font-size:0.85rem">
-                            Tap a table on the floor map to create or view an order.
-                        </p>
-                    </div>
-                </div>
+            <div class="banner-title">Welcome<br><small>*${esc(employee.name)}*</small></div>
+          </div>
+          <div class="welcome-hub">
+            <div></div><div class="mid"></div><div></div>
+            <div class="welcome-buttons">
+              <div class="welcome-grid">
+                <button class="btn-welcome" onclick="waiterClock()">${clockLabel}</button>
+                <button class="btn-welcome" onclick="wRender('orders')">Orders</button>
+                <button class="btn-welcome" onclick="wRender('tables')">Tables</button>
+                <button class="btn-welcome" onclick="wRender('payments')">Payments</button>
+                <button class="btn-welcome" onclick="wRender('timesheet')">Time Sheet</button>
+                <div></div>
+              </div>
             </div>
-        </div>
-    `;
+          </div>
+        `;
+    }
 
-    // Initialize floor map with assigned tables
-    createFloorMap('waiterFloorMap', onTableClick, employee.assignedTables);
-    refreshFloorMap('waiterFloorMap');
-    loadMenu();
+    window.waiterClock = async function () {
+        await toggleClock();
+        renderWelcome();
+    };
 
-    // Auto-refresh every 5 seconds
-    setInterval(() => refreshFloorMap('waiterFloorMap'), 5000);
+    function renderTimesheet() {
+        stopPolling();
+        mytimesheet.render({
+            root,
+            backLabel: 'back',
+            onBack: () => wRender('welcome'),
+            title: 'My Timesheet',
+        });
+    }
 
-    async function loadMenu() {
+    // ── Tables: split view — map (top) + dedicated action list (bottom) ──
+    async function renderTables() {
+        stopPolling();
+        root.innerHTML = `
+          <div class="top-banner">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <button class="btn-back" onclick="wRender('welcome')">back</button>
+              <div></div>
+              <button class="banner-signout-text" onclick="logout()">Sign Out</button>
+            </div>
+            <div class="banner-title">My Tables<br><small>*${esc(employee.name)}*</small></div>
+          </div>
+          <div class="framed">
+            <div class="frame-inner">
+              <div id="wMap" style="margin-bottom:16px"></div>
+              <h3 style="font-weight:800; font-size:1rem; color:var(--navy); margin:18px 0 8px">
+                Tables Ready to Clear
+              </h3>
+              <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:10px">
+                Once customers have paid and left, tap <b>Mark Dirty</b>.
+              </p>
+              <div id="wClearList" class="stock-grid"></div>
+            </div>
+          </div>
+        `;
+        await loadTables();
+        pollTimer = setInterval(loadTables, 4000);
+    }
+    async function loadTables() {
         try {
-            menuItems = await api.getMenu();
-        } catch (e) {
-            console.error('Failed to load menu:', e);
-        }
+            const tables = await api.getTables();
+            const byId = {};
+            tables.forEach(t => { byId[t.tableId] = t; });
+            const mapEl = document.getElementById('wMap');
+            const myTables = assigned();
+            // Map is purely informational now (big buttons below drive the action).
+            if (mapEl) mapEl.innerHTML = buildFloorMap(byId, () => '');
+
+            // Build the action list: only MY tables that aren't already DIRTY.
+            const list = document.getElementById('wClearList');
+            if (!list) return;
+            const candidates = myTables
+                .map(id => byId[id])
+                .filter(t => t && t.status !== 'DIRTY');
+            if (!candidates.length) {
+                list.innerHTML = `<p class="text-muted text-center" style="padding:20px; grid-column:1/-1">
+                  No active tables to clear right now.
+                </p>`;
+                return;
+            }
+            list.innerHTML = candidates.map(t => `
+              <div class="stock-row">
+                <span class="item-name">
+                  Table ${esc(t.tableId)}
+                  <span class="badge ${t.status === 'OCCUPIED' ? 'pending' : 'active'}"
+                        style="margin-left:8px; font-size:0.7rem">${esc(t.status)}</span>
+                </span>
+                <button class="pill pill-coral pill-sm" onclick="wMarkDirty('${esc(t.tableId)}')">
+                  Mark Dirty
+                </button>
+              </div>
+            `).join('');
+        } catch (e) { console.error(e); }
     }
-
-    async function onTableClick(tableId) {
-        selectedTable = tableId;
-        document.getElementById('selectedTableBadge').textContent = `Table ${tableId}`;
-
-        // Check for existing active orders on this table
+    window.wMarkDirty = async function (tableId) {
+        const ok = await confirmModal('Mark table ' + tableId + ' as dirty?\n(Customers have paid and left.)');
+        if (!ok) return;
         try {
-            const orders = await api.getOrdersForTable(tableId);
-            if (orders.length > 0) {
-                currentOrder = orders[0];
-                showExistingOrder();
-            } else {
-                currentOrder = null;
-                showNewOrderPrompt();
+            await api.updateTableStatus(tableId, 'DIRTY');
+            showToast('Table ' + tableId + ' marked dirty', 'success');
+            loadTables();
+        } catch (e) { showToast(e.message, 'error'); }
+    };
+
+    // ── Orders submenu ──
+    function renderOrdersMenu() {
+        stopPolling();
+        root.innerHTML = `
+          <div class="top-banner">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <button class="btn-back" onclick="wRender('welcome')">back</button>
+              <div></div>
+              <button class="banner-signout-text" onclick="logout()">Sign Out</button>
+            </div>
+            <div class="banner-title">Orders</div>
+          </div>
+          <div class="welcome-hub">
+            <div></div><div class="mid"></div><div></div>
+            <div class="welcome-buttons">
+              <div class="welcome-grid">
+                <button class="btn-welcome" onclick="wRender('active')">Active Orders</button>
+                <div></div>
+                <button class="btn-welcome" onclick="wRender('menu')">Menu</button>
+                <div></div>
+                <button class="btn-welcome" onclick="wRender('addPickTable')">Add items</button>
+                <div></div>
+              </div>
+            </div>
+          </div>
+        `;
+    }
+
+    // ── Active Orders list ──
+    async function renderActive() {
+        stopPolling();
+        root.innerHTML = `
+          <div class="top-banner" style="min-height: 80px">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <button class="btn-back" onclick="wRender('orders')">back</button>
+              <div></div>
+              <div></div>
+            </div>
+            <div class="banner-title" style="font-size:2.2rem; white-space: nowrap">Active Orders- <span style="color:#fff">Assigned to me</span></div>
+          </div>
+          <div class="framed">
+            <div class="frame-inner" id="wActiveList"><p class="text-muted">Loading…</p></div>
+          </div>
+        `;
+        try {
+            const all = await api.getAllOrders();
+            const mine = all.filter(o => o.waiterId === employee.employeeId && o.status !== 'COMPLETE');
+            const list = document.getElementById('wActiveList');
+            if (!mine.length) {
+                list.innerHTML = `<div style="text-align:center; padding:120px 0; font-size:2rem; font-weight:900">NO ORDERS</div>`;
+                return;
             }
+            list.innerHTML = mine.map(o => {
+                const time = o.createdAt ? new Date(o.createdAt).toTimeString().slice(0,5) : '';
+                const isReady = o.status === 'READY';
+                const statusText = isReady ? 'Ready — take payment'
+                                : o.status === 'IN_QUEUE' ? 'In Progress'
+                                : 'Not Started';
+                const statusColor = isReady ? '#047857' : '#3B82F6';
+                // READY orders get inline Cash/Card buttons so the waiter can
+                // charge without an extra click into the detail view.
+                const payButtons = isReady ? `
+                    <div style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end" onclick="event.stopPropagation()">
+                      <button class="pill pill-coral pill-sm" onclick="wPay(${o.orderId}, 'cash')">Pay Cash</button>
+                      <button class="pill pill-navy pill-sm" onclick="wPay(${o.orderId}, 'card')">Pay Card</button>
+                    </div>` : '';
+                return `
+                  <div style="display:grid; grid-template-columns: 1fr 1fr; padding: 18px 6px; border-bottom: 1px solid #eee; cursor:pointer" onclick="wShowOrder(${o.orderId})">
+                    <div style="font-weight:700; line-height: 1.6">
+                      <div>Order ${o.orderId}</div>
+                      <div>Table ${esc(o.tableId)}</div>
+                      <div>${time}</div>
+                      <div style="font-weight:600; color:var(--text-muted); font-size:0.85rem">Total: $${(o.total || 0).toFixed(2)}</div>
+                    </div>
+                    <div style="text-align:right">
+                      <div style="font-weight:700">Progress Status</div>
+                      <div style="color:${statusColor}; font-weight:700; margin-top:4px">${statusText}</div>
+                      ${payButtons}
+                    </div>
+                  </div>
+                `;
+            }).join('');
         } catch (e) {
-            showNewOrderPrompt();
+            document.getElementById('wActiveList').innerHTML = '<p class="text-red">Error: ' + esc(e.message) + '</p>';
         }
     }
 
-    function showNewOrderPrompt() {
-        const div = document.getElementById('orderContent');
-        div.innerHTML = `
-            <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:16px">
-                No active order on Table ${selectedTable}.
-            </p>
-            <button class="btn btn-primary" onclick="waiterCreateOrder()">Create New Order</button>
-        `;
-        document.getElementById('orderTitle').textContent = `Table ${selectedTable}`;
-    }
-
-    function showExistingOrder() {
-        const div = document.getElementById('orderContent');
-        const order = currentOrder;
-        const statusClass = order.status.toLowerCase();
-
-        let itemsHtml = '';
-        if (order.items && order.items.length > 0) {
-            itemsHtml = '<table class="data-table"><thead><tr><th>Item</th><th>Seat</th><th>Qty</th><th>Price</th></tr></thead><tbody>';
-            for (const item of order.items) {
-                itemsHtml += `<tr>
-                    <td>${item.itemName}</td>
-                    <td>${item.seatId}</td>
-                    <td>${item.quantity}</td>
-                    <td>$${(item.itemPrice * item.quantity).toFixed(2)}</td>
-                </tr>`;
-            }
-            itemsHtml += '</tbody></table>';
-        } else {
-            itemsHtml = '<p style="color:var(--text-secondary);font-size:0.85rem">No items yet.</p>';
-        }
-
-        let actionsHtml = '';
-        if (order.status === 'PENDING') {
-            actionsHtml = `
-                <button class="btn btn-primary" onclick="waiterShowAddItems()" style="margin-right:8px">Add Items</button>
-                <button class="btn btn-success" onclick="waiterSubmitOrder()">Send to Kitchen</button>
-            `;
-        } else if (order.status === 'READY') {
-            actionsHtml = `
-                <button class="btn btn-success" onclick="waiterCompleteOrder()">Complete & Pay</button>
-                <button class="btn btn-danger btn-small" onclick="waiterRequestRefund()" style="margin-left:8px">Request Refund</button>
-            `;
-        } else if (order.status === 'IN_QUEUE') {
-            actionsHtml = `<p style="color:var(--warning);font-size:0.85rem">Order is being prepared in the kitchen.</p>`;
-        }
-
-        div.innerHTML = `
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-                <span class="badge badge-${statusClass}">${order.status.replace('_',' ')}</span>
-                <span style="font-size:0.75rem;color:var(--text-secondary)">Order #${order.orderId}</span>
-            </div>
-            ${itemsHtml}
-            <div class="order-summary">
-                <div class="order-total">
-                    <span>Total</span>
-                    <span>$${(order.total || 0).toFixed(2)}</span>
+    window.wShowOrder = async function (orderId) {
+        try {
+            const o = await api.getOrder(orderId);
+            const time = o.createdAt ? new Date(o.createdAt).toTimeString().slice(0,5) : '';
+            const isReady = o.status === 'READY';
+            const statusText = isReady ? 'Ready — take payment'
+                            : o.status === 'IN_QUEUE' ? 'In Progress'
+                            : 'Not Started';
+            const statusColor = isReady ? '#047857' : '#3B82F6';
+            root.innerHTML = `
+              <div class="top-banner" style="min-height: 80px">
+                <div></div><div class="mid"></div><div></div>
+                <div class="banner-content">
+                  <button class="btn-back" onclick="wRender('active')">back</button>
+                  <div></div><div></div>
                 </div>
-                ${actionsHtml}
-            </div>
-        `;
-        document.getElementById('orderTitle').textContent = `Table ${selectedTable} - Order`;
+                <div class="banner-title" style="font-size:2.2rem; white-space: nowrap">Active Orders- <span>Assigned to me</span></div>
+              </div>
+              <div class="framed">
+                <div class="frame-inner">
+                  <div style="display:grid; grid-template-columns: 1fr auto; gap: 20px; margin-bottom: 18px">
+                    <div style="font-weight:700; line-height:1.6">
+                      <div>Order ${o.orderId}</div>
+                      <div>Table ${esc(o.tableId)}</div>
+                      <div>${time}</div>
+                    </div>
+                    <div style="text-align:right">
+                      <div style="font-weight:700">Progress Status</div>
+                      <div style="color:${statusColor}; font-weight:700">${statusText}</div>
+                    </div>
+                  </div>
+                  <div style="display:grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 16px">
+                    <div>${(o.items || []).map(i => `<div>${esc(i.itemName)}</div>`).join('')}</div>
+                    <div style="text-align:right">${(o.items || []).map(i => `<div>Seat ${i.seatId || '-'}</div>`).join('')}</div>
+                  </div>
+                  <div style="margin-top:14px; padding-top:10px; border-top:1px solid #eee; text-align:right; font-weight:900; font-size:1.1rem">
+                    Total: $${(o.total || 0).toFixed(2)}
+                  </div>
+                  ${o.status === 'PENDING' ? `
+                    <div style="margin-top:28px; display:flex; justify-content:flex-end">
+                      <button class="pill pill-coral" onclick="wSubmit(${o.orderId})">Send to Kitchen</button>
+                    </div>` : ''}
+                  ${isReady ? `
+                    <div style="margin-top:28px; display:flex; gap:10px; justify-content:flex-end">
+                      <button class="pill pill-coral" onclick="wPay(${o.orderId}, 'cash')">Pay Cash</button>
+                      <button class="pill pill-navy" onclick="wPay(${o.orderId}, 'card')">Pay Card</button>
+                    </div>` : ''}
+                </div>
+              </div>
+            `;
+        } catch (e) { showToast(e.message, 'error'); }
+    };
+
+    window.wSubmit = async function (id) {
+        try { await api.submitOrder(id); showToast('Order sent to kitchen', 'success'); renderActive(); }
+        catch (e) { showToast(e.message, 'error'); }
+    };
+
+    // Category -> visual accent color (used by both the menu browser and
+    // the add-items view so each section is distinctly color-coded).
+    function categoryColor(cat) {
+        const c = (cat || '').toLowerCase();
+        if (c.includes('appetizer') || c.includes('starter')) return '#F96167'; // coral
+        if (c.includes('entree')   || c.includes('main'))     return '#1E2761'; // navy
+        if (c.includes('dessert')  || c.includes('sweet'))    return '#B85042'; // terracotta
+        if (c.includes('drink')    || c.includes('beverage')) return '#028090'; // teal
+        if (c.includes('side'))                               return '#84B59F'; // sage
+        if (c.includes('salad'))                              return '#2C5F2D'; // forest
+        if (c.includes('breakfast'))                          return '#F9A825'; // amber
+        if (c.includes('special'))                            return '#6D2E46'; // berry
+        return '#3B82F6'; // default blue
     }
 
-    function showAddItemsUI() {
-        const div = document.getElementById('orderContent');
-        const categories = [...new Set(menuItems.map(m => m.category))];
-        selectedCategory = selectedCategory || categories[0];
-
-        div.innerHTML = `
-            <div class="seat-selector" id="seatSelector">
-                ${[1,2,3,4].map(s => `<button class="seat-btn ${s === selectedSeat ? 'active' : ''}" onclick="waiterSelectSeat(${s})">${s}</button>`).join('')}
+    // ── Menu browser ──
+    async function renderMenu() {
+        stopPolling();
+        root.innerHTML = `
+          <div class="top-banner">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <button class="btn-back" onclick="wRender('orders')">back</button>
+              <div></div>
+              <button class="banner-signout-text" onclick="logout()">Sign Out</button>
             </div>
-            <label class="form-label" style="margin-bottom:8px">Seat ${selectedSeat}</label>
-            <div class="category-tabs" id="categoryTabs">
-                ${categories.map(c => `<button class="category-tab ${c === selectedCategory ? 'active' : ''}" onclick="waiterSelectCategory('${c}')">${c}</button>`).join('')}
-            </div>
-            <div id="menuItemsList"></div>
-            <div id="pendingItems" style="margin-top:16px"></div>
-            <div style="margin-top:12px;display:flex;gap:8px">
-                <button class="btn btn-primary" onclick="waiterConfirmAddItems()">Add to Order</button>
-                <button class="btn btn-secondary" onclick="waiterCancelAddItems()">Cancel</button>
-            </div>
+            <div class="banner-title">Menu</div>
+          </div>
+          <div class="framed"><div class="frame-inner" id="wMenuList"><p class="text-muted">Loading…</p></div></div>
         `;
-
-        renderMenuItems();
-        renderPendingItems();
+        try {
+            const items = await api.getMenu();
+            const groups = {};
+            items.forEach(i => { (groups[i.category] = groups[i.category] || []).push(i); });
+            const html = Object.keys(groups).map(cat => {
+                const col = categoryColor(cat);
+                return `
+                  <div style="margin-bottom: 22px">
+                    <h3 style="font-weight: 900; font-size: 1.15rem; margin-bottom: 8px; border-bottom: 3px solid ${col}; padding-bottom: 4px; color:${col}">${esc(cat)}</h3>
+                    ${groups[cat].map(i => `
+                      <div style="display:flex; justify-content: space-between; padding: 6px 4px; border-bottom:1px solid #f0f0f0; border-left: 3px solid ${col}; padding-left:10px; margin-bottom:2px">
+                        <span>${esc(i.name)}</span>
+                        <span class="font-bold">$${(i.price || 0).toFixed(2)}</span>
+                      </div>`).join('')}
+                  </div>
+                `;
+            }).join('');
+            document.getElementById('wMenuList').innerHTML = html || '<p class="text-muted">No menu items.</p>';
+        } catch (e) {
+            document.getElementById('wMenuList').innerHTML = '<p class="text-red">Error: ' + esc(e.message) + '</p>';
+        }
     }
 
-    function renderMenuItems() {
-        const list = document.getElementById('menuItemsList');
-        if (!list) return;
-
-        const filtered = menuItems.filter(m => m.category === selectedCategory);
-        list.innerHTML = filtered.map(m => `
-            <div class="menu-item-row">
-                <span class="item-name">${m.name}</span>
-                <span class="item-price">$${m.price.toFixed(2)}</span>
-                <button class="btn btn-primary btn-small" onclick="waiterAddItem(${m.itemId}, '${m.name.replace(/'/g, "\\'")}', ${m.price})">+</button>
+    // ── Add items step 1: pick a table (Assigned Section) ──
+    async function renderAddPickTable() {
+        stopPolling();
+        addFlow = { tableId: null, items: [] };
+        root.innerHTML = `
+          <div class="top-banner">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <button class="btn-back" onclick="wRender('orders')">back</button>
+              <div></div>
+              <button class="banner-signout-text" onclick="logout()">Sign Out</button>
             </div>
+            <div class="banner-title">Assigned Section</div>
+          </div>
+          <div class="framed"><div class="frame-inner" id="wAssignedGrid"><p class="text-muted">Loading…</p></div></div>
+        `;
+        try {
+            const tables = await api.getTables();
+            const byId = {};
+            tables.forEach(t => { byId[t.tableId] = t; });
+            const myTables = assigned();
+            if (!myTables.length) {
+                document.getElementById('wAssignedGrid').innerHTML = '<p class="text-muted text-center" style="padding: 40px">You have no assigned tables. Ask your manager.</p>';
+                return;
+            }
+            const grid = document.getElementById('wAssignedGrid');
+            // Group into columns by letter
+            const cols = {};
+            myTables.forEach(id => {
+                const letter = id[0];
+                (cols[letter] = cols[letter] || []).push(id);
+            });
+            Object.values(cols).forEach(list => list.sort());
+            const colKeys = Object.keys(cols).sort();
+            grid.innerHTML = `
+              <div style="background:#efefef; border-radius:14px; padding:24px; max-width:460px; margin: 30px auto; display:flex; gap:26px; justify-content:center">
+                ${colKeys.map(k => `
+                  <div style="display:flex; flex-direction: column; gap: 8px">
+                    ${cols[k].map(id => {
+                        const t = byId[id];
+                        const status = (t && t.status || 'CLEAN').toLowerCase();
+                        return `<button class="tile ${status} tile-pill" style="width:56px;height:50px" onclick="wPickTable('${id}')">${id}</button>`;
+                    }).join('')}
+                  </div>
+                `).join('')}
+              </div>
+            `;
+        } catch (e) {
+            document.getElementById('wAssignedGrid').innerHTML = '<p class="text-red">Error: ' + esc(e.message) + '</p>';
+        }
+    }
+
+    window.wPickTable = function (id) {
+        addFlow.tableId = id;
+        renderAddItems();
+    };
+
+    // ── Add items step 2: pick items + seat ──
+    async function renderAddItems() {
+        stopPolling();
+        root.innerHTML = `
+          <div class="top-banner">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <button class="btn-back" onclick="wRender('addPickTable')">back</button>
+              <div></div>
+              <button class="banner-signout-text" onclick="logout()">Sign Out</button>
+            </div>
+            <div class="banner-title">Add Items <small>Table ${esc(addFlow.tableId)}</small></div>
+          </div>
+          <div class="framed"><div class="frame-inner">
+            <div id="wItemList"><p class="text-muted">Loading menu…</p></div>
+            <div style="margin-top: 18px; padding-top: 12px; border-top: 2px solid #eee">
+              <h4 class="mb-8">Pending items (<span id="wPendCount">0</span>)</h4>
+              <div id="wPendList"></div>
+              <div style="margin-top: 14px; display:flex; gap:10px; justify-content:flex-end">
+                <button class="pill pill-navy" onclick="wSendOrder()">Submit Order</button>
+              </div>
+            </div>
+          </div></div>
+        `;
+        try {
+            const items = await api.getMenu();
+            // Refresh the lookup map — wAddLine reads from here to avoid
+            // passing names through onclick attribute strings.
+            menuById = {};
+            items.forEach(i => { menuById[i.id] = i; });
+
+            const list = document.getElementById('wItemList');
+            const groups = {};
+            items.forEach(i => { (groups[i.category] = groups[i.category] || []).push(i); });
+            list.innerHTML = Object.keys(groups).map(cat => {
+                const col = categoryColor(cat);
+                return `
+                  <div style="margin-bottom: 16px">
+                    <h4 style="font-weight:900; border-bottom: 2px solid ${col}; padding-bottom:4px; margin-bottom: 6px; color:${col}">${esc(cat)}</h4>
+                    ${groups[cat].map(i => `
+                      <div style="display:grid; grid-template-columns: 1fr auto auto auto; gap: 10px; padding: 5px 4px; align-items:center; border-bottom:1px solid #f5f5f5; border-left:3px solid ${col}; padding-left:10px">
+                        <span>${esc(i.name)}</span>
+                        <span class="font-bold">$${(i.price || 0).toFixed(2)}</span>
+                        <select id="seat-${i.id}" class="select" style="padding:4px 8px; font-size:0.85rem">
+                          <option value="1">Seat 1</option>
+                          <option value="2">Seat 2</option>
+                          <option value="3">Seat 3</option>
+                          <option value="4">Seat 4</option>
+                        </select>
+                        <button class="pill pill-coral pill-sm" onclick="wAddLine(${i.id})">Add</button>
+                      </div>`).join('')}
+                  </div>
+                `;
+            }).join('');
+        } catch (e) {
+            document.getElementById('wItemList').innerHTML = '<p class="text-red">Error: ' + esc(e.message) + '</p>';
+        }
+    }
+
+    window.wAddLine = function (id) {
+        const item = menuById[id];
+        if (!item) { showToast('Item not found', 'error'); return; }
+        const seatEl = document.getElementById('seat-' + id);
+        const seat = seatEl ? parseInt(seatEl.value, 10) : 1;
+        addFlow.items.push({
+            itemId: id,
+            itemName: item.name,
+            itemPrice: item.price,
+            seatId: seat,
+            quantity: 1,
+        });
+        refreshPending();
+    };
+    function refreshPending() {
+        document.getElementById('wPendCount').textContent = addFlow.items.length;
+        document.getElementById('wPendList').innerHTML = addFlow.items.map((it, idx) => `
+          <div style="display:flex; justify-content: space-between; padding: 4px 0">
+            <span>${esc(it.itemName)} — Seat ${it.seatId}</span>
+            <button class="pill pill-red pill-sm" onclick="wRemLine(${idx})">Remove</button>
+          </div>
         `).join('');
     }
-
-    function renderPendingItems() {
-        const div = document.getElementById('pendingItems');
-        if (!div || orderItems.length === 0) {
-            if (div) div.innerHTML = '';
-            return;
+    window.wRemLine = function (idx) { addFlow.items.splice(idx, 1); refreshPending(); };
+    window.wSendOrder = async function () {
+        if (!addFlow.items.length) return showToast('No items to send', 'error');
+        // The submit flow is three sequential writes: create the order row,
+        // add the items (which also decrements stock atomically), then flip
+        // status to IN_QUEUE. If steps 2 or 3 fail — typically because stock
+        // ran out between picking and submitting — we'd otherwise leave an
+        // empty PENDING order clinging to the table. Roll it back so the
+        // waiter can re-try cleanly.
+        let createdOrderId = null;
+        try {
+            const order = await api.createOrder(addFlow.tableId, employee.employeeId);
+            createdOrderId = order.orderId;
+            await api.addOrderItems(createdOrderId, addFlow.items);
+            await api.submitOrder(createdOrderId);
+            showToast('Order #' + createdOrderId + ' sent to kitchen', 'success');
+            addFlow = { tableId: null, items: [] };
+            renderOrdersMenu();
+        } catch (e) {
+            if (createdOrderId != null) {
+                try { await api.cancelOrder(createdOrderId); }
+                catch (cleanupErr) { console.warn('Rollback of order #' + createdOrderId + ' failed:', cleanupErr); }
+            }
+            showToast(e.message, 'error');
         }
+    };
 
-        let total = orderItems.reduce((sum, i) => sum + i.itemPrice * i.quantity, 0);
-        div.innerHTML = `
-            <div class="form-label">Items to Add</div>
-            ${orderItems.map((item, idx) => `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:0.8rem">
-                    <span>Seat ${item.seatId}: ${item.itemName} x${item.quantity}</span>
-                    <span style="display:flex;align-items:center;gap:8px">
-                        <span style="color:var(--accent)">$${(item.itemPrice * item.quantity).toFixed(2)}</span>
-                        <button class="btn btn-danger btn-small" onclick="waiterRemovePendingItem(${idx})">x</button>
-                    </span>
-                </div>
-            `).join('')}
-            <div style="text-align:right;font-weight:700;margin-top:4px;font-size:0.85rem">Subtotal: $${total.toFixed(2)}</div>
+    // ── Payments placeholder ──
+    function renderPayments() {
+        stopPolling();
+        root.innerHTML = `
+          <div class="top-banner">
+            <div></div><div class="mid"></div><div></div>
+            <div class="banner-content">
+              <button class="btn-back" onclick="wRender('welcome')">back</button>
+              <div></div>
+              <button class="banner-signout-text" onclick="logout()">Sign Out</button>
+            </div>
+            <div class="banner-title">Payments</div>
+          </div>
+          <div class="framed"><div class="frame-inner" id="wPayList"><p class="text-muted">Loading…</p></div></div>
         `;
+        (async () => {
+            try {
+                const all = await api.getAllOrders();
+                const ready = all.filter(o => o.waiterId === employee.employeeId && o.status === 'READY');
+                const list = document.getElementById('wPayList');
+                if (!ready.length) {
+                    list.innerHTML = '<p class="text-muted text-center" style="padding:60px">No orders ready for payment.</p>';
+                    return;
+                }
+                list.innerHTML = ready.map(o => `
+                  <div style="display:grid; grid-template-columns:1fr auto auto; gap: 12px; padding: 12px 4px; border-bottom:1px solid #eee; align-items:center">
+                    <div>
+                      <div class="font-bold">Order ${o.orderId} — Table ${esc(o.tableId)}</div>
+                      <div class="text-muted" style="font-size:0.85rem">Total: $${(o.total || 0).toFixed(2)}</div>
+                    </div>
+                    <button class="pill pill-coral pill-sm" onclick="wPay(${o.orderId}, 'cash')">Cash</button>
+                    <button class="pill pill-navy pill-sm" onclick="wPay(${o.orderId}, 'card')">Card</button>
+                  </div>
+                `).join('');
+            } catch (e) {
+                document.getElementById('wPayList').innerHTML = '<p class="text-red">Error: ' + esc(e.message) + '</p>';
+            }
+        })();
     }
-
-    // Global functions for onclick handlers
-    window.waiterCreateOrder = async function() {
+    window.wPay = async function (orderId, method) {
         try {
-            currentOrder = await api.createOrder(selectedTable, employee.employeeId);
-            orderItems = [];
-            showToast('Order created for Table ' + selectedTable, 'success');
-            refreshFloorMap('waiterFloorMap');
-            showExistingOrder();
-        } catch (e) {
-            showToast(e.message, 'error');
-        }
+            // Find the order so we can also mark its table dirty after payment.
+            const all = await api.getAllOrders();
+            const ord = all.find(o => o.orderId === orderId);
+            await api.completeOrder(orderId, method);
+            if (ord && ord.tableId) {
+                try { await api.updateTableStatus(ord.tableId, 'DIRTY'); } catch {}
+            }
+            showToast('Payment recorded — table ' + (ord ? ord.tableId : '') + ' marked dirty', 'success');
+            // Refresh whichever view the user is currently on. The pay
+            // button can now fire from Active Orders, the order detail,
+            // or the dedicated Payments page.
+            const onPayments = !!document.getElementById('wPayList');
+            const onActive   = !!document.getElementById('wActiveList');
+            if (onPayments)      renderPayments();
+            else if (onActive)   renderActive();
+            else                 wRender('active');
+        } catch (e) { showToast(e.message, 'error'); }
     };
 
-    window.waiterShowAddItems = function() {
-        orderItems = [];
-        showAddItemsUI();
+    // ── Router ──
+    window.wRender = function (v) {
+        if (v === 'welcome')       renderWelcome();
+        else if (v === 'tables')   renderTables();
+        else if (v === 'orders')   renderOrdersMenu();
+        else if (v === 'active')   renderActive();
+        else if (v === 'menu')     renderMenu();
+        else if (v === 'addPickTable') renderAddPickTable();
+        else if (v === 'payments') renderPayments();
+        else if (v === 'timesheet') renderTimesheet();
     };
 
-    window.waiterSelectSeat = function(seat) {
-        selectedSeat = seat;
-        document.querySelectorAll('.seat-btn').forEach(b => b.classList.remove('active'));
-        document.querySelector(`.seat-btn:nth-child(${seat})`).classList.add('active');
-        document.querySelector('.form-label').textContent = `Seat ${seat}`;
-    };
-
-    window.waiterSelectCategory = function(cat) {
-        selectedCategory = cat;
-        document.querySelectorAll('.category-tab').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.category-tab').forEach(b => {
-            if (b.textContent === cat) b.classList.add('active');
-        });
-        renderMenuItems();
-    };
-
-    window.waiterAddItem = function(itemId, itemName, price) {
-        const existing = orderItems.find(i => i.itemId === itemId && i.seatId === selectedSeat);
-        if (existing) {
-            existing.quantity++;
-        } else {
-            orderItems.push({ itemId, itemName, seatId: selectedSeat, quantity: 1, itemPrice: price });
-        }
-        renderPendingItems();
-    };
-
-    window.waiterRemovePendingItem = function(idx) {
-        orderItems.splice(idx, 1);
-        renderPendingItems();
-    };
-
-    window.waiterConfirmAddItems = async function() {
-        if (orderItems.length === 0) {
-            showToast('No items to add', 'error');
-            return;
-        }
-        try {
-            currentOrder = await api.addOrderItems(currentOrder.orderId, orderItems);
-            orderItems = [];
-            showToast('Items added to order', 'success');
-            showExistingOrder();
-        } catch (e) {
-            showToast(e.message, 'error');
-        }
-    };
-
-    window.waiterCancelAddItems = function() {
-        orderItems = [];
-        showExistingOrder();
-    };
-
-    window.waiterSubmitOrder = async function() {
-        try {
-            currentOrder = await api.submitOrder(currentOrder.orderId);
-            showToast('Order sent to kitchen!', 'success');
-            showExistingOrder();
-        } catch (e) {
-            showToast(e.message, 'error');
-        }
-    };
-
-    window.waiterCompleteOrder = async function() {
-        const div = document.getElementById('orderContent');
-        // Show payment method selector
-        div.innerHTML += `
-            <div class="modal-overlay" id="payModal">
-                <div class="modal" style="max-width:300px">
-                    <div class="modal-title">Payment Method</div>
-                    <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="waiterFinishComplete('card')">Card</button>
-                    <button class="btn btn-success" style="width:100%" onclick="waiterFinishComplete('cash')">Cash</button>
-                </div>
-            </div>
-        `;
-    };
-
-    window.waiterFinishComplete = async function(method) {
-        try {
-            await api.completeOrder(currentOrder.orderId, method);
-            await api.updateTableStatus(selectedTable, 'DIRTY');
-            showToast('Order completed! Table marked dirty.', 'success');
-            currentOrder = null;
-            refreshFloorMap('waiterFloorMap');
-            const modal = document.getElementById('payModal');
-            if (modal) modal.remove();
-            showNewOrderPrompt();
-        } catch (e) {
-            showToast(e.message, 'error');
-        }
-    };
-
-    window.waiterRequestRefund = function() {
-        const div = document.getElementById('orderContent');
-        div.innerHTML += `
-            <div class="modal-overlay" id="refundModal">
-                <div class="modal" style="max-width:400px">
-                    <div class="modal-title">Request Refund</div>
-                    <div class="form-group">
-                        <label class="form-label">Reason</label>
-                        <input class="form-input" id="refundReason" placeholder="Reason for refund" />
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Amount ($)</label>
-                        <input class="form-input" id="refundAmount" type="number" step="0.01" value="${currentOrder.total.toFixed(2)}" />
-                    </div>
-                    <div style="display:flex;gap:8px;margin-top:12px">
-                        <button class="btn btn-primary" onclick="waiterSubmitRefund()">Submit</button>
-                        <button class="btn btn-secondary" onclick="document.getElementById('refundModal').remove()">Cancel</button>
-                    </div>
-                </div>
-            </div>
-        `;
-    };
-
-    window.waiterSubmitRefund = async function() {
-        const reason = document.getElementById('refundReason').value;
-        const amount = parseFloat(document.getElementById('refundAmount').value);
-        if (!reason) { showToast('Please enter a reason', 'error'); return; }
-
-        try {
-            await api.createRefund({
-                orderId: currentOrder.orderId,
-                waiterId: employee.employeeId,
-                reason,
-                amount
-            });
-            showToast('Refund request submitted', 'success');
-            document.getElementById('refundModal').remove();
-        } catch (e) {
-            showToast(e.message, 'error');
-        }
-    };
+    renderWelcome();
 })();

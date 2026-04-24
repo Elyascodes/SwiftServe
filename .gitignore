@@ -35,3 +35,6 @@ npm-debug.log*
 
 # SQLite database (runtime data)
 backend/data/
+
+# Sprint 1 reference material (screenshots extracted from pptx)
+.sprint1-reference/
